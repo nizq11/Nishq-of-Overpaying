@@ -888,113 +888,70 @@ function selectStock(ticker, name, sector) {
 
 document.addEventListener('click', e => { if (!e.target.closest('.search-box-wrap')) hideSugg(); });
 
-// ── FETCH via Yahoo Finance (CORS proxy with fallbacks) ──
-async function fetchYahoo(ticker) {
+// ── FETCH via Financial Modeling Prep ──
+const FMP_KEY = 'a8eJzH8hEj3iIutpKBKRQ681UG8qujUB';
+
+async function fetchFMP(ticker) {
   const suffix = exchange === 'NSE' ? '.NS' : '.BO';
-  const rawSymbol = ticker + suffix;
-  const symbol = encodeURIComponent(rawSymbol);
-  const yahooUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=price,summaryDetail,financialData,defaultKeyStatistics,earningsTrend`;
-  const yahooUrl2 = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=price,summaryDetail,financialData,defaultKeyStatistics,earningsTrend`;
-
-  // Try multiple CORS proxies in order
-  const proxies = [
-    url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-    url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  ];
-
-  let lastError = null;
-
-  for (const makeProxy of proxies) {
-    for (const yUrl of [yahooUrl, yahooUrl2]) {
-      try {
-        const proxyUrl = makeProxy(yUrl);
-        const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-        if (!res.ok) continue;
-        const text = await res.text();
-        let parsed;
-        try {
-          // allorigins wraps in {contents, status}, others return raw JSON
-          const outer = JSON.parse(text);
-          if (outer.contents) {
-            parsed = JSON.parse(outer.contents);
-          } else if (outer.quoteSummary) {
-            parsed = outer;
-          } else {
-            continue;
-          }
-        } catch(e) { continue; }
-
-        if (!parsed || !parsed.quoteSummary) continue;
-        if (parsed.quoteSummary.error) {
-          lastError = new Error(parsed.quoteSummary.error.description || 'Yahoo Finance returned an error');
-          continue;
-        }
-        if (!parsed.quoteSummary.result || !parsed.quoteSummary.result[0]) {
-          lastError = new Error('No data returned — ticker may be invalid');
-          continue;
-        }
-        return parsed.quoteSummary.result[0];
-      } catch(e) {
-        lastError = e;
-        continue;
-      }
-    }
-  }
-
-  throw lastError || new Error('All data sources failed. Yahoo Finance may be rate-limiting. Try again in a moment.');
+  const symbol = ticker + suffix;
+  const base = 'https://financialmodelingprep.com/api/v3';
+  const [qR, pR, rR, gR, kR] = await Promise.all([
+    fetch(`${base}/quote/${symbol}?apikey=${FMP_KEY}`),
+    fetch(`${base}/profile/${symbol}?apikey=${FMP_KEY}`),
+    fetch(`${base}/ratios-ttm/${symbol}?apikey=${FMP_KEY}`),
+    fetch(`${base}/financial-growth/${symbol}?limit=1&apikey=${FMP_KEY}`),
+    fetch(`${base}/key-metrics-ttm/${symbol}?apikey=${FMP_KEY}`),
+  ]);
+  const [quote, profile, ratios, growth, keyMetrics] = await Promise.all([qR.json(),pR.json(),rR.json(),gR.json(),kR.json()]);
+  if (!quote || !quote[0]) throw new Error(`No data found for ${symbol}. Try switching NSE/BSE or check the ticker.`);
+  return { quote:quote[0], profile:profile[0]||{}, ratios:ratios[0]||{}, growth:growth[0]||{}, keyMetrics:keyMetrics[0]||{} };
 }
 
 // ── ANALYSE ──
 async function analyse() {
   if (!selectedStock) return;
   hideResults();
-  showLoading('Fetching live data from Yahoo Finance...');
-
+  showLoading('Fetching live data from Financial Modeling Prep...');
   try {
-    const data = await fetchYahoo(selectedStock.ticker);
+    const data = await fetchFMP(selectedStock.ticker);
     setLoading('Crunching the numbers...');
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 300));
     processAndRender(data);
   } catch(e) {
     hideLoading();
-    showError(`Couldn't fetch data for ${selectedStock.ticker}${exchange==='NSE'?'.NS':'.BO'}. ${e.message}. Try switching exchange (NSE/BSE) or check the ticker symbol.`);
+    showError(`Couldn't fetch data for ${selectedStock.ticker}. ${e.message}`);
   }
 }
 
 function processAndRender(data) {
   hideLoading();
-  const price = data.price;
-  const summary = data.summaryDetail;
-  const financial = data.financialData;
-  const keyStats = data.defaultKeyStatistics;
+  const { quote, profile, ratios, growth, keyMetrics } = data;
 
-  const cmp = price?.regularMarketPrice?.raw || 0;
-  const change = price?.regularMarketChange?.raw || 0;
-  const changePct = price?.regularMarketChangePercent?.raw || 0;
-  const companyName = price?.longName || price?.shortName || selectedStock.name;
-  const currency = price?.currency || 'INR';
+  const cmp          = quote.price || 0;
+  const change       = quote.change || 0;
+  const changePct    = (quote.changesPercentage || 0) / 100;
+  const companyName  = quote.name || profile.companyName || selectedStock.name;
+  const mktCap       = quote.marketCap || null;
+  const fiftyTwoHigh = quote.yearHigh || null;
+  const fiftyTwoLow  = quote.yearLow  || null;
 
-  const pe = summary?.trailingPE?.raw || keyStats?.trailingPE?.raw || null;
-  const forwardPE = summary?.forwardPE?.raw || keyStats?.forwardPE?.raw || null;
-  const pb = keyStats?.priceToBook?.raw || null;
-  const ps = keyStats?.priceToSalesTrailing12Months?.raw || null;
-  const evEbitda = keyStats?.enterpriseToEbitda?.raw || null;
-  const roe = financial?.returnOnEquity?.raw || null;
-  const revenueGrowth = financial?.revenueGrowth?.raw || null;
-  const earningsGrowth = financial?.earningsGrowth?.raw || null;
-  const debtToEquity = financial?.debtToEquity?.raw || null;
-  const currentRatio = financial?.currentRatio?.raw || null;
-  const grossMargin = financial?.grossMargins?.raw || null;
-  const operatingMargin = financial?.operatingMargins?.raw || null;
-  const profitMargin = financial?.profitMargins?.raw || null;
-  const divYield = summary?.dividendYield?.raw || null;
-  const beta = keyStats?.beta?.raw || null;
-  const mktCap = price?.marketCap?.raw || null;
-  const fiftyTwoHigh = summary?.fiftyTwoWeekHigh?.raw || null;
-  const fiftyTwoLow = summary?.fiftyTwoWeekLow?.raw || null;
-  const peg = keyStats?.pegRatio?.raw || null;
-  const fcfYield = financial?.freeCashflow?.raw && mktCap ? financial.freeCashflow.raw / mktCap : null;
+  const pe             = ratios.peRatioTTM                       || null;
+  const forwardPE      = ratios.priceEarningsRatioTTM            || pe;
+  const pb             = ratios.priceToBookRatioTTM              || null;
+  const ps             = ratios.priceToSalesRatioTTM             || null;
+  const evEbitda       = ratios.enterpriseValueMultipleTTM       || keyMetrics.evToEbitdaTTM || null;
+  const roe            = ratios.returnOnEquityTTM                || null;
+  const profitMargin   = ratios.netProfitMarginTTM               || null;
+  const operatingMargin= ratios.operatingProfitMarginTTM         || null;
+  const grossMargin    = ratios.grossProfitMarginTTM             || null;
+  const debtToEquity   = ratios.debtEquityRatioTTM               || null;
+  const currentRatio   = ratios.currentRatioTTM                  || null;
+  const divYield       = ratios.dividendYieldTTM                 || null;
+  const peg            = ratios.priceEarningsToGrowthRatioTTM    || null;
+  const fcfYield       = keyMetrics.freeCashFlowYieldTTM         || null;
+  const revenueGrowth  = growth.revenueGrowth                    || null;
+  const earningsGrowth = growth.netIncomeGrowth                  || null;
+  const beta           = profile.beta                            || null;
 
   // ── SECTOR PE BENCHMARKS ──
   const sector = selectedStock.sector || 'default';
