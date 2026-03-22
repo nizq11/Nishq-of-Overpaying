@@ -955,10 +955,29 @@ Be as accurate as possible. Search multiple sources. If a metric is truly unavai
       if (block.type === 'text') fullText += block.text;
     }
 
-    // Parse JSON from response
-    const jsonMatch = fullText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Could not parse data from response. Try again.');
-    const stockData = JSON.parse(jsonMatch[0]);
+    // Parse JSON from response — find the largest JSON object in the text
+    const jsonMatches = fullText.match(/\{[\s\S]*?\}/g) || [];
+    // Also try greedy match for the full object
+    const greedyMatch = fullText.match(/\{[\s\S]*\}/);
+    if (greedyMatch) jsonMatches.unshift(greedyMatch[0]);
+    
+    let stockData = null;
+    for (const candidate of jsonMatches) {
+      try {
+        const parsed = JSON.parse(candidate);
+        // Must have at least a cmp or companyName field to be valid
+        if (parsed.cmp || parsed.companyName || parsed.ticker) {
+          stockData = parsed;
+          break;
+        }
+      } catch(e) { continue; }
+    }
+    if (!stockData) {
+      // Log what we got for debugging
+      console.log('Full response text:', fullText);
+      console.log('API response:', JSON.stringify(apiData));
+      throw new Error('Could not parse data from response. Try again in a moment.');
+    }
 
     setLoading('Crunching the numbers...');
     await new Promise(r => setTimeout(r, 300));
