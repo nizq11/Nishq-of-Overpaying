@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nishq of Overpaying — Indian Stock Valuation Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0d0f0e;
+  --bg2: #141716;
+  --bg3: #1c201e;
+  --bg4: #242926;
+  --ink: #e8ede9;
+  --ink2: #8a9489;
+  --ink3: #4a5449;
+  --green: #2ecc71;
+  --green2: #1a7a42;
+  --red: #e74c3c;
+  --red2: #7a1a1a;
+  --gold: #f0c040;
+  --gold2: #7a5a10;
+  --border: rgba(232,237,233,0.07);
+  --border2: rgba(232,237,233,0.13);
+  --font-head: 'Bebas Neue', sans-serif;
+  --font-body: 'Crimson Pro', Georgia, serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --radius: 6px;
+  --radius-lg: 12px;
+}
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── NOISE TEXTURE ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+}
+
+/* ── HEADER ── */
+header {
+  padding: 2.5rem 3rem 2rem;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 1;
+}
+.header-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+.title-block { display: flex; flex-direction: column; gap: 2px; }
+.title-main {
+  font-family: var(--font-head);
+  font-size: 56px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  line-height: 0.95;
+}
+.title-main em { color: var(--green); font-style: normal; }
+.title-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink3);
+  margin-top: 6px;
+}
+.title-sub span { color: var(--gold); }
+.header-right {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink3);
+  text-align: right;
+  line-height: 1.8;
+}
+.live-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  background: var(--green);
+  border-radius: 50%;
+  margin-right: 5px;
+  animation: blink 2s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1}50%{opacity:0.2} }
+
+/* ── MAIN ── */
+.main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2.5rem 3rem 4rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── SEARCH ── */
+.search-wrap {
+  margin-bottom: 2.5rem;
+}
+.search-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink3);
+  margin-bottom: 10px;
+}
+.search-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+.search-box-wrap { position: relative; flex: 1; }
+#search-input {
+  width: 100%;
+  padding: 14px 18px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-head);
+  font-size: 28px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  caret-color: var(--green);
+}
+#search-input::placeholder { color: var(--ink3); }
+#search-input:focus { border-color: var(--green2); box-shadow: 0 0 0 3px rgba(46,204,113,0.08); }
+
+.exchange-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-lg);
+  padding: 4px;
+}
+.ex-btn {
+  padding: 8px 20px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--ink3);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ex-btn.active { background: var(--bg4); color: var(--green); border: 1px solid var(--green2); }
+.ex-btn:hover:not(.active) { color: var(--ink2); }
+
+.analyse-btn {
+  padding: 14px 28px;
+  background: var(--green);
+  color: var(--bg);
+  font-family: var(--font-head);
+  font-size: 22px;
+  letter-spacing: 0.06em;
+  border: none;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.analyse-btn:hover { background: #3ddc7e; transform: translateY(-1px); }
+.analyse-btn:active { transform: scale(0.98); }
+.analyse-btn:disabled { background: var(--bg3); color: var(--ink3); cursor: not-allowed; transform: none; }
+
+/* ── SUGGESTIONS ── */
+#suggestions {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0; right: 0;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  z-index: 100;
+  display: none;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 16px;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-bottom: 1px solid var(--border);
+  gap: 1rem;
+}
+.suggestion-item:last-child { border-bottom: none; }
+.suggestion-item:hover, .suggestion-item.highlighted { background: var(--bg3); }
+.sug-left { display: flex; flex-direction: column; gap: 1px; }
+.sug-ticker { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--green); }
+.sug-name { font-size: 13px; color: var(--ink2); }
+.sug-right { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.sug-sector { font-family: var(--font-mono); font-size: 10px; color: var(--ink3); text-align: right; }
+.sug-ex { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; padding: 1px 6px; border-radius: 3px; background: var(--bg4); color: var(--ink3); }
+
+/* ── LOADING ── */
+.loading-wrap {
+  display: none;
+  align-items: center;
+  gap: 14px;
+  padding: 2rem 0;
+}
+.loading-wrap.visible { display: flex; }
+.spinner {
+  width: 24px; height: 24px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--green);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-txt { font-family: var(--font-mono); font-size: 12px; color: var(--ink3); letter-spacing: 0.06em; }
+
+/* ── VERDICT CARD ── */
+.verdict-card {
+  border-radius: var(--radius-lg);
+  padding: 2rem 2.5rem;
+  margin-bottom: 2rem;
+  position: relative;
+  overflow: hidden;
+  display: none;
+}
+.verdict-card.visible { display: block; }
+.verdict-card::before {
+  content: '';
+  position: absolute;
+  top: -60px; right: -60px;
+  width: 220px; height: 220px;
+  border-radius: 50%;
+  opacity: 0.06;
+  pointer-events: none;
+}
+.verdict-card.over { background: linear-gradient(135deg, rgba(231,76,60,0.12), rgba(231,76,60,0.04)); border: 1px solid rgba(231,76,60,0.25); }
+.verdict-card.over::before { background: var(--red); }
+.verdict-card.under { background: linear-gradient(135deg, rgba(46,204,113,0.1), rgba(46,204,113,0.03)); border: 1px solid rgba(46,204,113,0.2); }
+.verdict-card.under::before { background: var(--green); }
+.verdict-card.fair { background: linear-gradient(135deg, rgba(240,192,64,0.1), rgba(240,192,64,0.03)); border: 1px solid rgba(240,192,64,0.22); }
+.verdict-card.fair::before { background: var(--gold); }
+
+.verdict-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 2rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.verdict-left { display: flex; flex-direction: column; gap: 6px; }
+.verdict-company { font-family: var(--font-head); font-size: 42px; letter-spacing: 0.03em; line-height: 1; color: var(--ink); }
+.verdict-ticker { font-family: var(--font-mono); font-size: 12px; color: var(--ink3); letter-spacing: 0.1em; margin-top: 4px; }
+.verdict-price { font-family: var(--font-head); font-size: 52px; letter-spacing: 0.02em; line-height: 1; }
+.verdict-price.over { color: var(--red); }
+.verdict-price.under { color: var(--green); }
+.verdict-price.fair { color: var(--gold); }
+.verdict-change { font-family: var(--font-mono); font-size: 12px; margin-top: 4px; }
+
+.verdict-stamp {
+  font-family: var(--font-head);
+  font-size: 80px;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  opacity: 0.12;
+  position: absolute;
+  right: 2rem;
+  top: 50%;
+  transform: translateY(-50%) rotate(-8deg);
+  pointer-events: none;
+}
+.verdict-stamp.over { color: var(--red); }
+.verdict-stamp.under { color: var(--green); }
+.verdict-stamp.fair { color: var(--gold); }
+
+.verdict-quip {
+  font-family: var(--font-body);
+  font-size: 20px;
+  font-style: italic;
+  color: var(--ink);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+.verdict-quip.over { color: #f09090; }
+.verdict-quip.under { color: #90d0a0; }
+.verdict-quip.fair { color: #f0d080; }
+
+.serious-note {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink3);
+  line-height: 1.7;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.03);
+  border-left: 2px solid var(--border2);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  margin-top: 12px;
+}
+.serious-note strong { color: var(--ink2); font-weight: 500; }
+
+/* ── METRICS GRID ── */
+.metrics-section { display: none; margin-bottom: 2rem; }
+.metrics-section.visible { display: block; }
+.section-head {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink3);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.section-head::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 1px;
+}
+.metric-cell {
+  background: var(--bg2);
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: background 0.15s;
+}
+.metric-cell:hover { background: var(--bg3); }
+.mc-label { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink3); }
+.mc-val { font-family: var(--font-head); font-size: 22px; letter-spacing: 0.03em; color: var(--ink); line-height: 1; font-variant-numeric: tabular-nums; }
+.mc-val.good { color: var(--green); }
+.mc-val.bad { color: var(--red); }
+.mc-val.warn { color: var(--gold); }
+.mc-sub { font-size: 11px; color: var(--ink3); font-family: var(--font-mono); }
+.mc-signal {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  display: inline-block;
+  margin-top: 3px;
+  width: fit-content;
+}
+.mc-signal.green { background: rgba(46,204,113,0.12); color: var(--green); }
+.mc-signal.red { background: rgba(231,76,60,0.12); color: var(--red); }
+.mc-signal.gold { background: rgba(240,192,64,0.12); color: var(--gold); }
+.mc-signal.gray { background: rgba(255,255,255,0.05); color: var(--ink3); }
+
+/* ── VALUATION BREAKDOWN ── */
+.val-breakdown {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+.val-breakdown-head {
+  padding: 10px 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.val-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 1.25rem;
+  border-bottom: 1px solid var(--border);
+  gap: 1rem;
+}
+.val-row:last-child { border-bottom: none; }
+.val-row:hover { background: var(--bg3); }
+.val-metric { font-family: var(--font-mono); font-size: 12px; color: var(--ink2); }
+.val-metric small { display: block; font-size: 10px; color: var(--ink3); margin-top: 1px; }
+.val-nums { display: flex; gap: 2rem; align-items: center; }
+.val-num { text-align: right; }
+.val-num-label { font-family: var(--font-mono); font-size: 9px; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.08em; }
+.val-num-val { font-family: var(--font-head); font-size: 18px; letter-spacing: 0.03em; font-variant-numeric: tabular-nums; }
+.val-signal-bar {
+  width: 80px;
+  height: 6px;
+  background: var(--bg4);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+.val-signal-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+
+/* ── ASSUMPTIONS ── */
+.assumptions-box {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+  display: none;
+}
+.assumptions-box.visible { display: block; }
+.assumptions-title { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); margin-bottom: 10px; }
+.assumptions-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+.ass-item { font-family: var(--font-mono); font-size: 11px; color: var(--ink3); line-height: 1.5; }
+.ass-item strong { color: var(--ink2); display: block; }
+
+/* ── SCORE BAR ── */
+.score-section { display: none; margin-bottom: 2rem; }
+.score-section.visible { display: block; }
+.score-outer {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem 2rem;
+}
+.score-label-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+.score-label { font-family: var(--font-head); font-size: 24px; letter-spacing: 0.04em; }
+.score-num { font-family: var(--font-head); font-size: 48px; letter-spacing: 0.02em; }
+.score-track { height: 10px; background: var(--bg4); border-radius: 5px; overflow: hidden; margin-bottom: 8px; }
+.score-fill { height: 100%; border-radius: 5px; transition: width 1s cubic-bezier(0.4,0,0.2,1); }
+.score-markers { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 9px; color: var(--ink3); }
+
+/* ── ERROR ── */
+.error-box {
+  background: rgba(231,76,60,0.08);
+  border: 1px solid rgba(231,76,60,0.2);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #f09090;
+  display: none;
+}
+.error-box.visible { display: block; }
+
+::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 2px; }
+
+@media (max-width: 800px) {
+  header { padding: 1.5rem; }
+  .main { padding: 1.5rem; }
+  .title-main { font-size: 38px; }
+  .metrics-grid { grid-template-columns: 1fr 1fr; }
+  .assumptions-grid { grid-template-columns: 1fr 1fr; }
+  .search-row { flex-wrap: wrap; }
+  .exchange-toggle { order: -1; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="title-block">
+      <div class="title-main">Nishq of <em>Overpaying</em></div>
+      <div class="title-sub">Indian Equity Valuation Engine · by <span>Nishq Nerlekar</span> · Live data via Yahoo Finance</div>
+    </div>
+    <div class="header-right">
+      <span class="live-dot"></span>LIVE PRICES<br>
+      NSE · BSE · Nifty 500 universe<br>
+      Combined DCF + Relative approach
+    </div>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- SEARCH -->
+  <div class="search-wrap">
+    <div class="search-label">Search by company name or ticker symbol</div>
+    <div class="search-row">
+      <div class="search-box-wrap">
+        <input type="text" id="search-input" placeholder="e.g. Reliance, INFY, HDFC..." autocomplete="off">
+        <div id="suggestions"></div>
+      </div>
+      <div class="exchange-toggle">
+        <button class="ex-btn active" id="btn-nse" onclick="setEx('NSE',this)">NSE</button>
+        <button class="ex-btn" id="btn-bse" onclick="setEx('BSE',this)">BSE</button>
+      </div>
+      <button class="analyse-btn" id="analyse-btn" onclick="analyse()" disabled>ANALYSE</button>
+    </div>
+  </div>
+
+  <!-- LOADING -->
+  <div class="loading-wrap" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-txt" id="loading-txt">Fetching data from Yahoo Finance...</div>
+  </div>
+
+  <!-- ERROR -->
+  <div class="error-box" id="error-box"></div>
+
+  <!-- VERDICT -->
+  <div class="verdict-card" id="verdict-card">
+    <div class="verdict-stamp" id="verdict-stamp"></div>
+    <div class="verdict-top">
+      <div class="verdict-left">
+        <div class="verdict-company" id="v-company"></div>
+        <div class="verdict-ticker" id="v-ticker"></div>
+      </div>
+      <div>
+        <div class="verdict-price" id="v-price"></div>
+        <div class="verdict-change" id="v-change"></div>
+      </div>
+    </div>
+    <div class="verdict-quip" id="v-quip"></div>
+    <div class="serious-note" id="v-serious"></div>
+  </div>
+
+  <!-- SCORE -->
+  <div class="score-section" id="score-section">
+    <div class="section-head">Overall Valuation Score</div>
+    <div class="score-outer">
+      <div class="score-label-row">
+        <div class="score-label" id="score-label">Valuation Score</div>
+        <div class="score-num" id="score-num" style="color:var(--green)">—</div>
+      </div>
+      <div class="score-track"><div class="score-fill" id="score-fill" style="width:0%;background:var(--green)"></div></div>
+      <div class="score-markers"><span>0 — Deeply undervalued</span><span>50 — Fair value</span><span>100 — Dangerously overvalued</span></div>
+    </div>
+  </div>
+
+  <!-- METRICS -->
+  <div class="metrics-section" id="metrics-section">
+    <div class="section-head">Key Metrics</div>
+    <div class="metrics-grid" id="metrics-grid"></div>
+  </div>
+
+  <!-- VALUATION BREAKDOWN -->
+  <div class="metrics-section" id="breakdown-section">
+    <div class="section-head">Valuation Breakdown — Method by Method</div>
+    <div class="val-breakdown" id="val-breakdown"></div>
+  </div>
+
+  <!-- ASSUMPTIONS -->
+  <div class="assumptions-box" id="assumptions-box">
+    <div class="assumptions-title">Model Assumptions</div>
+    <div class="assumptions-grid" id="assumptions-grid"></div>
+  </div>
+
+</div>
+
+<script>
+// ══ NSE STOCK LIST (top ~300 Nifty 500 stocks) ══
+const STOCKS = [
+  {t:'RELIANCE',n:'Reliance Industries',s:'Energy/Conglomerate'},
+  {t:'TCS',n:'Tata Consultancy Services',s:'IT'},
+  {t:'HDFCBANK',n:'HDFC Bank',s:'Banking'},
+  {t:'INFY',n:'Infosys',s:'IT'},
+  {t:'ICICIBANK',n:'ICICI Bank',s:'Banking'},
+  {t:'HINDUNILVR',n:'Hindustan Unilever',s:'FMCG'},
+  {t:'ITC',n:'ITC Limited',s:'FMCG'},
+  {t:'SBIN',n:'State Bank of India',s:'Banking'},
+  {t:'BAJFINANCE',n:'Bajaj Finance',s:'NBFC'},
+  {t:'BHARTIARTL',n:'Bharti Airtel',s:'Telecom'},
+  {t:'KOTAKBANK',n:'Kotak Mahindra Bank',s:'Banking'},
+  {t:'AXISBANK',n:'Axis Bank',s:'Banking'},
+  {t:'ASIANPAINT',n:'Asian Paints',s:'Paints'},
+  {t:'MARUTI',n:'Maruti Suzuki',s:'Auto'},
+  {t:'SUNPHARMA',n:'Sun Pharmaceutical',s:'Pharma'},
+  {t:'TITAN',n:'Titan Company',s:'Consumer'},
+  {t:'ULTRACEMCO',n:'UltraTech Cement',s:'Cement'},
+  {t:'WIPRO',n:'Wipro',s:'IT'},
+  {t:'NESTLEIND',n:'Nestle India',s:'FMCG'},
+  {t:'POWERGRID',n:'Power Grid Corporation',s:'Utilities'},
+  {t:'NTPC',n:'NTPC',s:'Utilities'},
+  {t:'ONGC',n:'Oil & Natural Gas Corp',s:'Energy'},
+  {t:'TATAMOTORS',n:'Tata Motors',s:'Auto'},
+  {t:'HCLTECH',n:'HCL Technologies',s:'IT'},
+  {t:'BAJAJFINSV',n:'Bajaj Finserv',s:'Financial Services'},
+  {t:'JSWSTEEL',n:'JSW Steel',s:'Metals'},
+  {t:'TATASTEEL',n:'Tata Steel',s:'Metals'},
+  {t:'ADANIENT',n:'Adani Enterprises',s:'Conglomerate'},
+  {t:'ADANIPORTS',n:'Adani Ports',s:'Infrastructure'},
+  {t:'COALINDIA',n:'Coal India',s:'Mining'},
+  {t:'HINDALCO',n:'Hindalco Industries',s:'Metals'},
+  {t:'CIPLA',n:'Cipla',s:'Pharma'},
+  {t:'DRREDDY',n:'Dr. Reddy\'s Laboratories',s:'Pharma'},
+  {t:'DIVISLAB',n:'Divi\'s Laboratories',s:'Pharma'},
+  {t:'APOLLOHOSP',n:'Apollo Hospitals',s:'Healthcare'},
+  {t:'EICHERMOT',n:'Eicher Motors',s:'Auto'},
+  {t:'HEROMOTOCO',n:'Hero MotoCorp',s:'Auto'},
+  {t:'BAJAJ-AUTO',n:'Bajaj Auto',s:'Auto'},
+  {t:'BRITANNIA',n:'Britannia Industries',s:'FMCG'},
+  {t:'GRASIM',n:'Grasim Industries',s:'Diversified'},
+  {t:'INDUSINDBK',n:'IndusInd Bank',s:'Banking'},
+  {t:'TECHM',n:'Tech Mahindra',s:'IT'},
+  {t:'LT',n:'Larsen & Toubro',s:'Infrastructure'},
+  {t:'SHREECEM',n:'Shree Cement',s:'Cement'},
+  {t:'AMBUJACEM',n:'Ambuja Cements',s:'Cement'},
+  {t:'ACC',n:'ACC Limited',s:'Cement'},
+  {t:'PIDILITIND',n:'Pidilite Industries',s:'Chemicals'},
+  {t:'BERGEPAINT',n:'Berger Paints',s:'Paints'},
+  {t:'HAVELLS',n:'Havells India',s:'Electricals'},
+  {t:'DABUR',n:'Dabur India',s:'FMCG'},
+  {t:'MARICO',n:'Marico',s:'FMCG'},
+  {t:'COLPAL',n:'Colgate-Palmolive India',s:'FMCG'},
+  {t:'GODREJCP',n:'Godrej Consumer Products',s:'FMCG'},
+  {t:'MUTHOOTFIN',n:'Muthoot Finance',s:'NBFC'},
+  {t:'CHOLAFIN',n:'Cholamandalam Investment',s:'NBFC'},
+  {t:'SBILIFE',n:'SBI Life Insurance',s:'Insurance'},
+  {t:'HDFCLIFE',n:'HDFC Life Insurance',s:'Insurance'},
+  {t:'ICICIGI',n:'ICICI Lombard',s:'Insurance'},
+  {t:'ICICIPRULI',n:'ICICI Prudential Life',s:'Insurance'},
+  {t:'BIOCON',n:'Biocon',s:'Pharma'},
+  {t:'LUPIN',n:'Lupin',s:'Pharma'},
+  {t:'AUROPHARMA',n:'Aurobindo Pharma',s:'Pharma'},
+  {t:'TORNTPHARM',n:'Torrent Pharmaceuticals',s:'Pharma'},
+  {t:'ZOMATO',n:'Zomato',s:'Internet/Food Tech'},
+  {t:'PAYTM',n:'One97 Communications (Paytm)',s:'Fintech'},
+  {t:'NYKAA',n:'FSN E-Commerce (Nykaa)',s:'E-Commerce'},
+  {t:'POLICYBZR',n:'PB Fintech (PolicyBazaar)',s:'Fintech'},
+  {t:'DMART',n:'Avenue Supermarts (DMart)',s:'Retail'},
+  {t:'TRENT',n:'Trent',s:'Retail'},
+  {t:'PAGEIND',n:'Page Industries',s:'Textiles'},
+  {t:'VEDL',n:'Vedanta',s:'Metals/Mining'},
+  {t:'SAIL',n:'Steel Authority of India',s:'Metals'},
+  {t:'NMDC',n:'NMDC',s:'Mining'},
+  {t:'BPCL',n:'Bharat Petroleum',s:'Energy'},
+  {t:'IOC',n:'Indian Oil Corporation',s:'Energy'},
+  {t:'HINDPETRO',n:'Hindustan Petroleum',s:'Energy'},
+  {t:'GAIL',n:'GAIL India',s:'Gas'},
+  {t:'MGL',n:'Mahanagar Gas',s:'Gas'},
+  {t:'IGL',n:'Indraprastha Gas',s:'Gas'},
+  {t:'TATACONSUM',n:'Tata Consumer Products',s:'FMCG'},
+  {t:'EMAMILTD',n:'Emami',s:'FMCG'},
+  {t:'JUBLLFOOD',n:'Jubilant Foodworks',s:'QSR'},
+  {t:'DEVYANI',n:'Devyani International',s:'QSR'},
+  {t:'WESTLIFE',n:'Westlife Foodworld',s:'QSR'},
+  {t:'IRCTC',n:'IRCTC',s:'Tourism/Rail'},
+  {t:'INDIGO',n:'IndiGo (InterGlobe Aviation)',s:'Aviation'},
+  {t:'SPICEJET',n:'SpiceJet',s:'Aviation'},
+  {t:'MOTHERSON',n:'Samvardhana Motherson',s:'Auto Ancillary'},
+  {t:'BOSCHLTD',n:'Bosch',s:'Auto Ancillary'},
+  {t:'MRF',n:'MRF',s:'Tyres'},
+  {t:'APOLLOTYRE',n:'Apollo Tyres',s:'Tyres'},
+  {t:'BALKRISIND',n:'Balkrishna Industries',s:'Tyres'},
+  {t:'CUMMINSIND',n:'Cummins India',s:'Engineering'},
+  {t:'ABB',n:'ABB India',s:'Engineering'},
+  {t:'SIEMENS',n:'Siemens India',s:'Engineering'},
+  {t:'SCHNEIDER',n:'Schneider Electric India',s:'Engineering'},
+  {t:'VOLTAS',n:'Voltas',s:'Consumer Durables'},
+  {t:'BLUESTAR',n:'Blue Star',s:'Consumer Durables'},
+  {t:'WHIRLPOOL',n:'Whirlpool of India',s:'Consumer Durables'},
+  {t:'DIXON',n:'Dixon Technologies',s:'Electronics'},
+  {t:'AMBER',n:'Amber Enterprises',s:'Electronics'},
+  {t:'KAYNES',n:'Kaynes Technology',s:'Electronics'},
+  {t:'TATAELXSI',n:'Tata Elxsi',s:'IT'},
+  {t:'MPHASIS',n:'Mphasis',s:'IT'},
+  {t:'LTIM',n:'LTIMindtree',s:'IT'},
+  {t:'PERSISTENT',n:'Persistent Systems',s:'IT'},
+  {t:'COFORGE',n:'Coforge',s:'IT'},
+  {t:'KPITTECH',n:'KPIT Technologies',s:'IT'},
+  {t:'ZENSARTECH',n:'Zensar Technologies',s:'IT'},
+  {t:'HAPPSTMNDS',n:'Happiest Minds',s:'IT'},
+  {t:'MASTEK',n:'Mastek',s:'IT'},
+  {t:'OFSS',n:'Oracle Financial Services',s:'IT'},
+  {t:'FSL',n:'Firstsource Solutions',s:'IT/BPO'},
+  {t:'BANKBARODA',n:'Bank of Baroda',s:'Banking'},
+  {t:'CANBK',n:'Canara Bank',s:'Banking'},
+  {t:'PNB',n:'Punjab National Bank',s:'Banking'},
+  {t:'UNIONBANK',n:'Union Bank of India',s:'Banking'},
+  {t:'FEDERALBNK',n:'Federal Bank',s:'Banking'},
+  {t:'IDFCFIRSTB',n:'IDFC First Bank',s:'Banking'},
+  {t:'BANDHANBNK',n:'Bandhan Bank',s:'Banking'},
+  {t:'RBLBANK',n:'RBL Bank',s:'Banking'},
+  {t:'AUBANK',n:'AU Small Finance Bank',s:'Banking'},
+  {t:'UJJIVANSFB',n:'Ujjivan Small Finance Bank',s:'Banking'},
+  {t:'EQUITASBNK',n:'Equitas Small Finance Bank',s:'Banking'},
+  {t:'LICHSGFIN',n:'LIC Housing Finance',s:'Housing Finance'},
+  {t:'PNBHOUSING',n:'PNB Housing Finance',s:'Housing Finance'},
+  {t:'CANFINHOME',n:'Can Fin Homes',s:'Housing Finance'},
+  {t:'HOMEFIRST',n:'Home First Finance',s:'Housing Finance'},
+  {t:'AAVAS',n:'Aavas Financiers',s:'Housing Finance'},
+  {t:'MANAPPURAM',n:'Manappuram Finance',s:'NBFC'},
+  {t:'M&MFIN',n:'Mahindra & Mahindra Financial',s:'NBFC'},
+  {t:'SHRIRAMFIN',n:'Shriram Finance',s:'NBFC'},
+  {t:'SUNDARMFIN',n:'Sundaram Finance',s:'NBFC'},
+  {t:'LTFH',n:'L&T Finance',s:'NBFC'},
+  {t:'M&M',n:'Mahindra & Mahindra',s:'Auto'},
+  {t:'ASHOKLEY',n:'Ashok Leyland',s:'Auto'},
+  {t:'TVSMOTOR',n:'TVS Motor Company',s:'Auto'},
+  {t:'ESCORTS',n:'Escorts Kubota',s:'Auto'},
+  {t:'FORCEMOT',n:'Force Motors',s:'Auto'},
+  {t:'SRF',n:'SRF Limited',s:'Chemicals'},
+  {t:'DEEPAKNTR',n:'Deepak Nitrite',s:'Chemicals'},
+  {t:'AAPL',n:'Aarti Industries',s:'Chemicals'},
+  {t:'NAVINFLUOR',n:'Navin Fluorine',s:'Chemicals'},
+  {t:'CLEAN',n:'Clean Science & Technology',s:'Chemicals'},
+  {t:'FINPIPE',n:'Finolex Industries',s:'Plastics'},
+  {t:'ASTRAL',n:'Astral',s:'Plastics/Paints'},
+  {t:'SUPREMEIND',n:'Supreme Industries',s:'Plastics'},
+  {t:'KANSAINER',n:'Kansai Nerolac Paints',s:'Paints'},
+  {t:'INDIACEM',n:'India Cements',s:'Cement'},
+  {t:'RAMCOCEM',n:'Ramco Cements',s:'Cement'},
+  {t:'JKCEMENT',n:'JK Cement',s:'Cement'},
+  {t:'TATAPOWER',n:'Tata Power',s:'Utilities'},
+  {t:'TORNTPOWER',n:'Torrent Power',s:'Utilities'},
+  {t:'CESC',n:'CESC',s:'Utilities'},
+  {t:'ADANIGREEN',n:'Adani Green Energy',s:'Renewables'},
+  {t:'ADANITRANS',n:'Adani Transmission',s:'Utilities'},
+  {t:'ADANIPOWER',n:'Adani Power',s:'Utilities'},
+  {t:'NHPC',n:'NHPC',s:'Utilities'},
+  {t:'SJVN',n:'SJVN',s:'Utilities'},
+  {t:'IRFC',n:'Indian Railway Finance Corp',s:'Finance'},
+  {t:'PFC',n:'Power Finance Corporation',s:'Finance'},
+  {t:'REC',n:'REC Limited',s:'Finance'},
+  {t:'HUDCO',n:'HUDCO',s:'Finance'},
+  {t:'CONCOR',n:'Container Corporation of India',s:'Logistics'},
+  {t:'BLUEDART',n:'Blue Dart Express',s:'Logistics'},
+  {t:'DELHIVERY',n:'Delhivery',s:'Logistics'},
+  {t:'MAHLOG',n:'Mahindra Logistics',s:'Logistics'},
+  {t:'GLENMARK',n:'Glenmark Pharmaceuticals',s:'Pharma'},
+  {t:'ALKEM',n:'Alkem Laboratories',s:'Pharma'},
+  {t:'ABBOTINDIA',n:'Abbott India',s:'Pharma'},
+  {t:'PFIZER',n:'Pfizer India',s:'Pharma'},
+  {t:'SANOFI',n:'Sanofi India',s:'Pharma'},
+  {t:'IPCALAB',n:'IPCA Laboratories',s:'Pharma'},
+  {t:'LALPATHLAB',n:'Dr Lal PathLabs',s:'Healthcare'},
+  {t:'METROPOLIS',n:'Metropolis Healthcare',s:'Healthcare'},
+  {t:'MAXHEALTH',n:'Max Healthcare',s:'Healthcare'},
+  {t:'FORTIS',n:'Fortis Healthcare',s:'Healthcare'},
+  {t:'NARAYANA',n:'Narayana Hrudayalaya',s:'Healthcare'},
+  {t:'STARHEALTH',n:'Star Health Insurance',s:'Insurance'},
+  {t:'NIACL',n:'New India Assurance',s:'Insurance'},
+  {t:'GICRE',n:'GIC Re',s:'Insurance'},
+  {t:'BSE',n:'BSE Limited',s:'Exchange'},
+  {t:'MCX',n:'Multi Commodity Exchange',s:'Exchange'},
+  {t:'CDSL',n:'CDSL',s:'Financial Infrastructure'},
+  {t:'CAMS',n:'CAMS',s:'Financial Infrastructure'},
+  {t:'360ONE',n:'360 ONE WAM',s:'Wealth Management'},
+  {t:'ANGELONE',n:'Angel One',s:'Broking'},
+  {t:'IIFL',n:'IIFL Finance',s:'NBFC'},
+  {t:'MOTILALOFS',n:'Motilal Oswal Financial Services',s:'Financial Services'},
+  {t:'HDFCAMC',n:'HDFC AMC',s:'Asset Management'},
+  {t:'NIPPONLIFE',n:'Nippon India AMC',s:'Asset Management'},
+  {t:'UTIAMC',n:'UTI AMC',s:'Asset Management'},
+  {t:'ABCAPITAL',n:'Aditya Birla Capital',s:'Financial Services'},
+  {t:'MFSL',n:'Max Financial Services',s:'Financial Services'},
+  {t:'CENTRALBK',n:'Central Bank of India',s:'Banking'},
+  {t:'INDIANB',n:'Indian Bank',s:'Banking'},
+  {t:'UCOBANK',n:'UCO Bank',s:'Banking'},
+  {t:'MAHABANK',n:'Bank of Maharashtra',s:'Banking'},
+  {t:'PVRINOX',n:'PVR INOX',s:'Entertainment'},
+  {t:'INOXWIND',n:'INOX Wind',s:'Renewables'},
+  {t:'SUZLON',n:'Suzlon Energy',s:'Renewables'},
+  {t:'ORIENTELEC',n:'Orient Electric',s:'Electricals'},
+  {t:'POLYCAB',n:'Polycab India',s:'Electricals'},
+  {t:'KEI',n:'KEI Industries',s:'Electricals'},
+  {t:'FINOLEX',n:'Finolex Cables',s:'Electricals'},
+  {t:'CROMPTON',n:'Crompton Greaves Consumer',s:'Consumer Durables'},
+  {t:'BATAINDIA',n:'Bata India',s:'Footwear'},
+  {t:'RELAXO',n:'Relaxo Footwears',s:'Footwear'},
+  {t:'VMART',n:'V-Mart Retail',s:'Retail'},
+  {t:'SHOPERSTOP',n:'Shoppers Stop',s:'Retail'},
+  {t:'ABFRL',n:'Aditya Birla Fashion & Retail',s:'Retail'},
+  {t:'VEDANT',n:'Vedant Fashions (Manyavar)',s:'Retail'},
+  {t:'RAYMOND',n:'Raymond',s:'Textiles'},
+  {t:'ARVIND',n:'Arvind',s:'Textiles'},
+  {t:'KITEX',n:'Kitex Garments',s:'Textiles'},
+  {t:'LAXMIMACH',n:'Lakshmi Machine Works',s:'Engineering'},
+  {t:'BHEL',n:'Bharat Heavy Electricals',s:'Engineering'},
+  {t:'BEL',n:'Bharat Electronics',s:'Defence'},
+  {t:'HAL',n:'Hindustan Aeronautics',s:'Defence'},
+  {t:'MAZDOCK',n:'Mazagon Dock Shipbuilders',s:'Defence'},
+  {t:'COCHINSHIP',n:'Cochin Shipyard',s:'Defence'},
+  {t:'GRSE',n:'Garden Reach Shipbuilders',s:'Defence'},
+  {t:'MTAR',n:'MTAR Technologies',s:'Defence/Space'},
+  {t:'ASTRAZEN',n:'AstraZeneca Pharma India',s:'Pharma'},
+  {t:'GILLETTE',n:'Gillette India',s:'FMCG'},
+  {t:'PGHH',n:'Procter & Gamble Hygiene',s:'FMCG'},
+  {t:'HONAUT',n:'Honeywell Automation',s:'Automation'},
+  {t:'3MINDIA',n:'3M India',s:'Diversified'},
+  {t:'TATACOMM',n:'Tata Communications',s:'Telecom'},
+  {t:'ROUTE',n:'Route Mobile',s:'Tech/Telecom'},
+  {t:'TANLA',n:'Tanla Platforms',s:'Tech/Telecom'},
+  {t:'QUICKHEAL',n:'Quick Heal Technologies',s:'Cybersecurity'},
+  {t:'INTELLECT',n:'Intellect Design Arena',s:'Fintech'},
+  {t:'TATATECH',n:'Tata Technologies',s:'IT'},
+  {t:'CYIENT',n:'Cyient',s:'IT'},
+  {t:'NIITLTD',n:'NIIT Learning Systems',s:'Education'},
+  {t:'CARERATING',n:'CARE Ratings',s:'Financial Services'},
+  {t:'ICRA',n:'ICRA',s:'Financial Services'},
+];
+
+// Sector average PE/PB benchmarks (approximate Nifty sector averages)
+const SECTOR_PE = {
+  'IT': 28, 'Banking': 14, 'NBFC': 22, 'FMCG': 55, 'Auto': 22,
+  'Pharma': 30, 'Energy': 12, 'Metals': 12, 'Cement': 25,
+  'Telecom': 35, 'Infrastructure': 20, 'Utilities': 18,
+  'Consumer': 55, 'Chemicals': 30, 'Insurance': 45,
+  'Healthcare': 35, 'Retail': 60, 'Financial Services': 20,
+  'Defence': 40, 'Renewables': 50, 'Fintech': 80,
+  'Internet/Food Tech': 100, 'Exchange': 30, 'default': 25
+};
+const SECTOR_PB = {
+  'IT': 8, 'Banking': 2.5, 'NBFC': 4, 'FMCG': 12, 'Auto': 5,
+  'Pharma': 5, 'Energy': 1.5, 'Metals': 1.8, 'Cement': 4,
+  'Telecom': 4, 'default': 4
+};
+
+let selectedStock = null;
+let exchange = 'NSE';
+let sugHighlight = -1;
+
+function setEx(ex, btn) {
+  exchange = ex;
+  document.querySelectorAll('.ex-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (selectedStock) document.getElementById('analyse-btn').disabled = false;
+}
+
+// ── SEARCH / SUGGESTIONS ──
+document.getElementById('search-input').addEventListener('input', function() {
+  const q = this.value.trim().toLowerCase();
+  selectedStock = null;
+  document.getElementById('analyse-btn').disabled = true;
+  if (q.length < 1) { hideSugg(); return; }
+  const matches = STOCKS.filter(s =>
+    s.t.toLowerCase().includes(q) || s.n.toLowerCase().includes(q)
+  ).slice(0, 10);
+  if (!matches.length) { hideSugg(); return; }
+  showSugg(matches);
+});
+
+document.getElementById('search-input').addEventListener('keydown', function(e) {
+  const items = document.querySelectorAll('.suggestion-item');
+  if (e.key === 'ArrowDown') { e.preventDefault(); sugHighlight = Math.min(sugHighlight+1, items.length-1); highlightSug(items); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); sugHighlight = Math.max(sugHighlight-1, 0); highlightSug(items); }
+  else if (e.key === 'Enter') { if (sugHighlight >= 0 && items[sugHighlight]) items[sugHighlight].click(); else if (selectedStock) analyse(); }
+  else if (e.key === 'Escape') hideSugg();
+});
+
+function highlightSug(items) { items.forEach((el,i) => el.classList.toggle('highlighted', i===sugHighlight)); }
+
+function showSugg(matches) {
+  sugHighlight = -1;
+  const el = document.getElementById('suggestions');
+  el.innerHTML = matches.map(s => `
+    <div class="suggestion-item" onclick="selectStock('${s.t}','${s.n.replace(/'/g,"\\'")}','${s.s}')">
+      <div class="sug-left">
+        <div class="sug-ticker">${s.t}</div>
+        <div class="sug-name">${s.n}</div>
+      </div>
+      <div class="sug-right">
+        <div class="sug-sector">${s.s}</div>
+        <div class="sug-ex">${exchange}</div>
+      </div>
+    </div>`).join('');
+  el.style.display = 'block';
+}
+function hideSugg() { document.getElementById('suggestions').style.display = 'none'; }
+
+function selectStock(ticker, name, sector) {
+  selectedStock = { ticker, name, sector };
+  document.getElementById('search-input').value = `${ticker} — ${name}`;
+  hideSugg();
+  document.getElementById('analyse-btn').disabled = false;
+  document.getElementById('search-input').focus();
+}
+
+document.addEventListener('click', e => { if (!e.target.closest('.search-box-wrap')) hideSugg(); });
+
+// ── FETCH via Yahoo Finance (CORS proxy) ──
+async function fetchYahoo(ticker) {
+  const suffix = exchange === 'NSE' ? '.NS' : '.BO';
+  const symbol = encodeURIComponent(ticker + suffix);
+  // Use allorigins CORS proxy to bypass browser CORS restriction
+  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=price,summaryDetail,financialData,defaultKeyStatistics,earningsTrend`;
+  const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+  const res = await fetch(proxy);
+  if (!res.ok) throw new Error('Network error');
+  const data = await res.json();
+  const parsed = JSON.parse(data.contents);
+  if (parsed.quoteSummary.error) throw new Error(parsed.quoteSummary.error.description || 'Yahoo Finance error');
+  return parsed.quoteSummary.result[0];
+}
+
+// ── ANALYSE ──
+async function analyse() {
+  if (!selectedStock) return;
+  hideResults();
+  showLoading('Fetching live data from Yahoo Finance...');
+
+  try {
+    const data = await fetchYahoo(selectedStock.ticker);
+    setLoading('Crunching the numbers...');
+    await new Promise(r => setTimeout(r, 400));
+    processAndRender(data);
+  } catch(e) {
+    hideLoading();
+    showError(`Couldn't fetch data for ${selectedStock.ticker}${exchange==='NSE'?'.NS':'.BO'}. ${e.message}. Try switching exchange (NSE/BSE) or check the ticker symbol.`);
+  }
+}
+
+function processAndRender(data) {
+  hideLoading();
+  const price = data.price;
+  const summary = data.summaryDetail;
+  const financial = data.financialData;
+  const keyStats = data.defaultKeyStatistics;
+
+  const cmp = price?.regularMarketPrice?.raw || 0;
+  const change = price?.regularMarketChange?.raw || 0;
+  const changePct = price?.regularMarketChangePercent?.raw || 0;
+  const companyName = price?.longName || price?.shortName || selectedStock.name;
+  const currency = price?.currency || 'INR';
+
+  const pe = summary?.trailingPE?.raw || keyStats?.trailingPE?.raw || null;
+  const forwardPE = summary?.forwardPE?.raw || keyStats?.forwardPE?.raw || null;
+  const pb = keyStats?.priceToBook?.raw || null;
+  const ps = keyStats?.priceToSalesTrailing12Months?.raw || null;
+  const evEbitda = keyStats?.enterpriseToEbitda?.raw || null;
+  const roe = financial?.returnOnEquity?.raw || null;
+  const revenueGrowth = financial?.revenueGrowth?.raw || null;
+  const earningsGrowth = financial?.earningsGrowth?.raw || null;
+  const debtToEquity = financial?.debtToEquity?.raw || null;
+  const currentRatio = financial?.currentRatio?.raw || null;
+  const grossMargin = financial?.grossMargins?.raw || null;
+  const operatingMargin = financial?.operatingMargins?.raw || null;
+  const profitMargin = financial?.profitMargins?.raw || null;
+  const divYield = summary?.dividendYield?.raw || null;
+  const beta = keyStats?.beta?.raw || null;
+  const mktCap = price?.marketCap?.raw || null;
+  const fiftyTwoHigh = summary?.fiftyTwoWeekHigh?.raw || null;
+  const fiftyTwoLow = summary?.fiftyTwoWeekLow?.raw || null;
+  const peg = keyStats?.pegRatio?.raw || null;
+  const fcfYield = financial?.freeCashflow?.raw && mktCap ? financial.freeCashflow.raw / mktCap : null;
+
+  // ── SECTOR PE BENCHMARKS ──
+  const sector = selectedStock.sector || 'default';
+  const sectorKey = Object.keys(SECTOR_PE).find(k => sector.includes(k)) || 'default';
+  const sectorPE = SECTOR_PE[sectorKey];
+  const sectorPB = SECTOR_PB[sectorKey] || SECTOR_PB['default'];
+
+  // ── SCORING SYSTEM (0 = deeply under, 100 = dangerously over) ──
+  let scores = [], weights = [];
+  const addScore = (val, benchLow, benchHigh, w, invert=false) => {
+    if (val === null || isNaN(val)) return;
+    let norm;
+    if (invert) norm = 1 - Math.min(1, Math.max(0, (val - benchLow) / (benchHigh - benchLow)));
+    else norm = Math.min(1, Math.max(0, (val - benchLow) / (benchHigh - benchLow)));
+    scores.push(norm * 100);
+    weights.push(w);
+  };
+
+  // PE vs sector (higher PE = more overvalued)
+  if (pe) addScore(pe, sectorPE * 0.5, sectorPE * 2, 3);
+  if (forwardPE) addScore(forwardPE, sectorPE * 0.4, sectorPE * 1.8, 2);
+  // PB
+  if (pb) addScore(pb, sectorPB * 0.4, sectorPB * 2.5, 2);
+  // EV/EBITDA (higher = more overvalued)
+  if (evEbitda && evEbitda > 0) addScore(evEbitda, 8, 40, 2);
+  // PEG (>2 = overvalued, <1 = undervalued)
+  if (peg && peg > 0) addScore(peg, 0.5, 3, 2);
+  // ROE (higher = better quality = somewhat justifies premium, reduce overvaluation)
+  if (roe) addScore(roe, 0.05, 0.30, 1, true);
+  // Revenue growth (higher growth = justifies premium)
+  if (revenueGrowth) addScore(revenueGrowth, -0.05, 0.30, 1, true);
+  // FCF yield (higher = undervalued)
+  if (fcfYield) addScore(fcfYield, 0.01, 0.10, 1.5, true);
+  // 52-week position (near high = more likely overvalued)
+  if (fiftyTwoHigh && fiftyTwoLow && cmp) {
+    const pos = (cmp - fiftyTwoLow) / (fiftyTwoHigh - fiftyTwoLow);
+    scores.push(pos * 100); weights.push(0.5);
+  }
+
+  let score = 50; // default neutral
+  if (scores.length > 0) {
+    const totalW = weights.reduce((a,b)=>a+b,0);
+    score = scores.reduce((a,v,i)=>a+v*weights[i],0)/totalW;
+    score = Math.max(0, Math.min(100, score));
+  }
+
+  // ── VERDICT ──
+  let verdict, quip, stamptxt;
+  if (score < 35) {
+    verdict = 'under';
+    stamptxt = 'UNDERVALUED';
+    const quips = [
+      `The market has forgotten about ${companyName}. You're welcome.`,
+      `${companyName} is cheaper than your last Swiggy order. Relatively speaking.`,
+      `Analysts call it 'undervalued'. We call it 'everyone else is asleep'.`,
+      `If ${companyName} were a restaurant, it would be a hidden gem with no Zomato listing.`,
+      `The market is basically handing you ${companyName} at a discount. Which is suspicious, but here we are.`
+    ];
+    quip = quips[Math.floor(Math.random()*quips.length)];
+  } else if (score > 65) {
+    verdict = 'over';
+    stamptxt = 'OVERVALUED';
+    const quips = [
+      `${companyName} is priced like it's already colonised Mars. It has not.`,
+      `At this valuation, you're essentially paying for the company's dreams. Hope you like dreams.`,
+      `The only thing growing faster than ${companyName}'s price is the confidence of retail investors buying it.`,
+      `${companyName} is so overvalued even the promoters are probably confused.`,
+      `Buying ${companyName} at this price is a bold strategy. Let's see how it plays out.`,
+      `The valuation assumes ${companyName} will cure cancer, fix inflation, and also make great chai. Bold.`
+    ];
+    quip = quips[Math.floor(Math.random()*quips.length)];
+  } else {
+    verdict = 'fair';
+    stamptxt = 'FAIR VALUE';
+    const quips = [
+      `Phew. ${companyName} is actually priced like a sensible adult. Rare.`,
+      `Phew. The market got one right. ${companyName} is fairly valued. Mark the calendar.`,
+      `Phew. ${companyName} is neither a steal nor a scam. What a time to be alive.`,
+      `Phew. A fairly valued Indian stock. We didn't think we'd see this today.`
+    ];
+    quip = quips[Math.floor(Math.random()*quips.length)];
+  }
+
+  const serious = `<strong>On a serious note:</strong> This is a quantitative screening tool using live market data from Yahoo Finance. The score combines P/E (vs sector average of ${sectorPE}x), P/B, EV/EBITDA, PEG, ROE, revenue growth, FCF yield, and 52-week positioning. It does <em>not</em> account for management quality, corporate governance, competitive moat, macro tailwinds, or qualitative factors — all of which can justify significant deviations from these metrics. Do not make investment decisions based solely on this tool. Consult a SEBI-registered investment advisor.`;
+
+  // ── RENDER ──
+  const vc = document.getElementById('verdict-card');
+  vc.className = `verdict-card visible ${verdict}`;
+  document.getElementById('verdict-stamp').className = `verdict-stamp ${verdict}`;
+  document.getElementById('verdict-stamp').textContent = stamptxt;
+  document.getElementById('v-company').textContent = companyName;
+  document.getElementById('v-ticker').textContent = `${selectedStock.ticker}.${exchange === 'NSE' ? 'NS' : 'BO'} · ${selectedStock.sector} · ${exchange}`;
+  const vp = document.getElementById('v-price');
+  vp.className = `verdict-price ${verdict}`;
+  vp.textContent = `₹${cmp.toLocaleString('en-IN', {minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const vc2 = document.getElementById('v-change');
+  vc2.style.color = change >= 0 ? 'var(--green)' : 'var(--red)';
+  vc2.textContent = `${change>=0?'+':''}${change.toFixed(2)} (${changePct>=0?'+':''}${(changePct*100).toFixed(2)}%) today`;
+  document.getElementById('v-quip').className = `verdict-quip ${verdict}`;
+  document.getElementById('v-quip').innerHTML = `"${quip}"`;
+  document.getElementById('v-serious').innerHTML = serious;
+
+  // ── SCORE BAR ──
+  const ss = document.getElementById('score-section');
+  ss.className = 'score-section visible';
+  document.getElementById('score-label').textContent = verdict==='over'?'Overvaluation Score':verdict==='under'?'Undervaluation Score':'Fair Value Score';
+  const sn = document.getElementById('score-num');
+  sn.textContent = Math.round(score);
+  sn.style.color = verdict==='over'?'var(--red)':verdict==='under'?'var(--green)':'var(--gold)';
+  const sf = document.getElementById('score-fill');
+  sf.style.width = '0%';
+  sf.style.background = verdict==='over'?'var(--red)':verdict==='under'?'var(--green)':'var(--gold)';
+  setTimeout(() => { sf.style.width = score + '%'; }, 100);
+
+  // ── METRICS GRID ──
+  const ms = document.getElementById('metrics-section');
+  ms.className = 'metrics-section visible';
+  const metricData = [
+    { label: 'CMP', val: cmp ? `₹${cmp.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}` : '—', sub: 'Current market price', signal: null, cls: '' },
+    { label: 'Market Cap', val: mktCap ? fmtCrore(mktCap) : '—', sub: 'Total market cap', signal: null, cls: '' },
+    { label: 'Trailing P/E', val: pe ? pe.toFixed(1)+'x' : '—', sub: `Sector avg: ${sectorPE}x`, signal: pe ? (pe < sectorPE*0.7 ? 'CHEAP' : pe > sectorPE*1.5 ? 'PRICEY' : 'IN LINE') : null, cls: pe ? (pe < sectorPE*0.7 ? 'good' : pe > sectorPE*1.5 ? 'bad' : 'warn') : '' },
+    { label: 'Forward P/E', val: forwardPE ? forwardPE.toFixed(1)+'x' : '—', sub: 'Based on est. earnings', signal: forwardPE ? (forwardPE < sectorPE*0.7 ? 'CHEAP' : forwardPE > sectorPE*1.5 ? 'PRICEY' : 'OK') : null, cls: forwardPE ? (forwardPE < sectorPE*0.7 ? 'good' : forwardPE > sectorPE*1.5 ? 'bad' : 'warn') : '' },
+    { label: 'P/B Ratio', val: pb ? pb.toFixed(2)+'x' : '—', sub: `Sector avg: ~${sectorPB}x`, signal: pb ? (pb < sectorPB*0.6 ? 'CHEAP' : pb > sectorPB*2 ? 'PRICEY' : 'OK') : null, cls: pb ? (pb < sectorPB*0.6 ? 'good' : pb > sectorPB*2 ? 'bad' : 'warn') : '' },
+    { label: 'EV/EBITDA', val: evEbitda && evEbitda > 0 ? evEbitda.toFixed(1)+'x' : '—', sub: 'Lower is cheaper', signal: evEbitda&&evEbitda>0 ? (evEbitda < 12 ? 'CHEAP' : evEbitda > 30 ? 'EXPENSIVE' : 'FAIR') : null, cls: evEbitda&&evEbitda>0 ? (evEbitda < 12 ? 'good' : evEbitda > 30 ? 'bad' : 'warn') : '' },
+    { label: 'PEG Ratio', val: peg && peg > 0 ? peg.toFixed(2) : '—', sub: '<1 cheap, >2 expensive', signal: peg&&peg>0 ? (peg < 1 ? 'CHEAP' : peg > 2 ? 'EXPENSIVE' : 'FAIR') : null, cls: peg&&peg>0 ? (peg < 1 ? 'good' : peg > 2 ? 'bad' : 'warn') : '' },
+    { label: 'ROE', val: roe ? (roe*100).toFixed(1)+'%' : '—', sub: '>15% = good business', signal: roe ? (roe > 0.20 ? 'STRONG' : roe > 0.12 ? 'DECENT' : 'WEAK') : null, cls: roe ? (roe > 0.20 ? 'good' : roe > 0.12 ? 'warn' : 'bad') : '' },
+    { label: 'Revenue Growth', val: revenueGrowth !== null ? (revenueGrowth*100).toFixed(1)+'%' : '—', sub: 'YoY revenue growth', signal: revenueGrowth !== null ? (revenueGrowth > 0.15 ? 'HIGH' : revenueGrowth > 0.05 ? 'MODERATE' : 'LOW') : null, cls: revenueGrowth !== null ? (revenueGrowth > 0.15 ? 'good' : revenueGrowth > 0.05 ? 'warn' : 'bad') : '' },
+    { label: 'Profit Margin', val: profitMargin !== null ? (profitMargin*100).toFixed(1)+'%' : '—', sub: 'Net profit margin', signal: profitMargin !== null ? (profitMargin > 0.15 ? 'STRONG' : profitMargin > 0.05 ? 'OK' : 'THIN') : null, cls: profitMargin !== null ? (profitMargin > 0.15 ? 'good' : profitMargin > 0.05 ? 'warn' : 'bad') : '' },
+    { label: 'D/E Ratio', val: debtToEquity !== null ? (debtToEquity/100).toFixed(2) : '—', sub: 'Lower = less leveraged', signal: debtToEquity !== null ? (debtToEquity < 50 ? 'LOW DEBT' : debtToEquity < 150 ? 'MODERATE' : 'HIGH DEBT') : null, cls: debtToEquity !== null ? (debtToEquity < 50 ? 'good' : debtToEquity < 150 ? 'warn' : 'bad') : '' },
+    { label: 'Div. Yield', val: divYield ? (divYield*100).toFixed(2)+'%' : '—', sub: 'Annual dividend yield', signal: divYield ? (divYield > 0.03 ? 'JUICY' : divYield > 0.01 ? 'MODEST' : 'LOW') : null, cls: divYield ? (divYield > 0.03 ? 'good' : divYield > 0.01 ? 'warn' : '') : '' },
+  ];
+  document.getElementById('metrics-grid').innerHTML = metricData.map(m => `
+    <div class="metric-cell">
+      <div class="mc-label">${m.label}</div>
+      <div class="mc-val ${m.cls}">${m.val}</div>
+      <div class="mc-sub">${m.sub}</div>
+      ${m.signal ? `<div class="mc-signal ${m.cls==='good'?'green':m.cls==='bad'?'red':m.cls==='warn'?'gold':'gray'}">${m.signal}</div>` : ''}
+    </div>`).join('');
+
+  // ── VALUATION BREAKDOWN ──
+  const bs = document.getElementById('breakdown-section');
+  bs.className = 'metrics-section visible';
+  const methods = [
+    {
+      name: 'Relative — P/E vs Sector',
+      sub: `Stock P/E vs ${sectorKey} sector average of ${sectorPE}x`,
+      stock: pe ? pe.toFixed(1)+'x' : '—',
+      bench: sectorPE+'x',
+      fill: pe ? Math.min(100, (pe/sectorPE)*50) : 50,
+      color: pe ? (pe < sectorPE*0.7 ? 'var(--green)' : pe > sectorPE*1.5 ? 'var(--red)' : 'var(--gold)') : 'var(--ink3)',
+      signal: pe ? (pe < sectorPE*0.7 ? 'Undervalued vs sector' : pe > sectorPE*1.5 ? 'Overvalued vs sector' : 'In line with sector') : 'N/A'
+    },
+    {
+      name: 'Relative — P/B vs Sector',
+      sub: `Price-to-book vs ${sectorKey} sector average of ~${sectorPB}x`,
+      stock: pb ? pb.toFixed(2)+'x' : '—',
+      bench: sectorPB+'x',
+      fill: pb ? Math.min(100, (pb/sectorPB)*50) : 50,
+      color: pb ? (pb < sectorPB*0.6 ? 'var(--green)' : pb > sectorPB*2 ? 'var(--red)' : 'var(--gold)') : 'var(--ink3)',
+      signal: pb ? (pb < sectorPB*0.6 ? 'Trading below book — opportunity?' : pb > sectorPB*2 ? 'Significant book premium' : 'Reasonable book value') : 'N/A'
+    },
+    {
+      name: 'Growth-Adjusted — PEG Ratio',
+      sub: 'P/E relative to earnings growth rate. <1 = undervalued, >2 = expensive',
+      stock: peg && peg > 0 ? peg.toFixed(2) : '—',
+      bench: '1.0 (fair)',
+      fill: peg && peg > 0 ? Math.min(100, peg*33) : 50,
+      color: peg&&peg>0 ? (peg < 1 ? 'var(--green)' : peg > 2 ? 'var(--red)' : 'var(--gold)') : 'var(--ink3)',
+      signal: peg&&peg>0 ? (peg < 1 ? 'Growth not fully priced in' : peg > 2 ? 'Paying a lot for growth' : 'Growth fairly priced') : 'N/A'
+    },
+    {
+      name: 'EV / EBITDA',
+      sub: 'Enterprise value vs operating earnings. Capital-structure neutral',
+      stock: evEbitda&&evEbitda>0 ? evEbitda.toFixed(1)+'x' : '—',
+      bench: '15x (fair)',
+      fill: evEbitda&&evEbitda>0 ? Math.min(100, (evEbitda/30)*100) : 50,
+      color: evEbitda&&evEbitda>0 ? (evEbitda < 12 ? 'var(--green)' : evEbitda > 30 ? 'var(--red)' : 'var(--gold)') : 'var(--ink3)',
+      signal: evEbitda&&evEbitda>0 ? (evEbitda < 12 ? 'Cheap on EV basis' : evEbitda > 30 ? 'Premium EV multiple' : 'Reasonable EV multiple') : 'N/A'
+    },
+    {
+      name: 'Quality — ROE',
+      sub: 'Return on equity — justifies valuation premium above 20%',
+      stock: roe ? (roe*100).toFixed(1)+'%' : '—',
+      bench: '15% (threshold)',
+      fill: roe ? Math.min(100, (roe/0.40)*100) : 50,
+      color: roe ? (roe > 0.20 ? 'var(--green)' : roe > 0.10 ? 'var(--gold)' : 'var(--red)') : 'var(--ink3)',
+      signal: roe ? (roe > 0.25 ? 'High-quality compounder' : roe > 0.15 ? 'Decent capital efficiency' : 'Below-par capital allocation') : 'N/A'
+    },
+    {
+      name: 'Cash Generation — FCF Yield',
+      sub: 'Free cash flow as % of market cap. Higher = more undervalued',
+      stock: fcfYield !== null ? (fcfYield*100).toFixed(2)+'%' : '—',
+      bench: '3-5% (healthy)',
+      fill: fcfYield !== null ? Math.max(0, 100 - (fcfYield/0.10)*100) : 50,
+      color: fcfYield !== null ? (fcfYield > 0.05 ? 'var(--green)' : fcfYield > 0.02 ? 'var(--gold)' : 'var(--red)') : 'var(--ink3)',
+      signal: fcfYield !== null ? (fcfYield > 0.05 ? 'Strong cash machine' : fcfYield > 0.02 ? 'Adequate cash generation' : 'Weak/negative FCF') : 'N/A'
+    },
+  ];
+  document.getElementById('val-breakdown').innerHTML = `
+    <div class="val-breakdown-head"><span>Method</span><span>Score / Signal</span></div>` +
+    methods.map(m => `
+    <div class="val-row">
+      <div class="val-metric">${m.name}<small>${m.sub}</small></div>
+      <div class="val-nums">
+        <div class="val-num"><div class="val-num-label">Stock</div><div class="val-num-val" style="color:${m.color}">${m.stock}</div></div>
+        <div class="val-num"><div class="val-num-label">Benchmark</div><div class="val-num-val" style="color:var(--ink3)">${m.bench}</div></div>
+        <div style="text-align:right;">
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--ink3);margin-bottom:4px;">${m.signal}</div>
+          <div class="val-signal-bar"><div class="val-signal-fill" style="width:${m.fill}%;background:${m.color};"></div></div>
+        </div>
+      </div>
+    </div>`).join('');
+
+  // ── ASSUMPTIONS ──
+  const ab = document.getElementById('assumptions-box');
+  ab.className = 'assumptions-box visible';
+  const assList = [
+    { label: 'Sector PE benchmark', val: `${sectorPE}x (${sectorKey} sector avg)` },
+    { label: 'Sector PB benchmark', val: `${sectorPB}x (${sectorKey} sector avg)` },
+    { label: 'Fair EV/EBITDA', val: '15x (broad market avg)' },
+    { label: 'PEG fair value', val: '1.0x (Graham standard)' },
+    { label: 'FCF yield threshold', val: '3–5% = adequate' },
+    { label: 'ROE threshold', val: '>15% justifies premium' },
+    { label: 'Data source', val: 'Yahoo Finance (live)' },
+    { label: 'DCF', val: 'Implicit via FCF yield + growth' },
+    { label: 'Score weights', val: 'P/E ×3, Fwd P/E ×2, P/B ×2, EV/EBITDA ×2, PEG ×2, ROE ×1, Growth ×1, FCF ×1.5' },
+  ];
+  document.getElementById('assumptions-grid').innerHTML = assList.map(a => `
+    <div class="ass-item"><strong>${a.label}</strong>${a.val}</div>`).join('');
+}
+
+function fmtCrore(v) {
+  if (v >= 1e12) return '₹' + (v/1e12).toFixed(2) + 'L Cr';
+  if (v >= 1e9) return '₹' + (v/1e9).toFixed(2) + 'K Cr';
+  if (v >= 1e7) return '₹' + (v/1e7).toFixed(2) + ' Cr';
+  return '₹' + (v/1e5).toFixed(0) + ' L';
+}
+
+function showLoading(txt) { const l=document.getElementById('loading');l.className='loading-wrap visible';document.getElementById('loading-txt').textContent=txt; }
+function setLoading(txt) { document.getElementById('loading-txt').textContent=txt; }
+function hideLoading() { document.getElementById('loading').className='loading-wrap'; }
+function showError(msg) { const e=document.getElementById('error-box');e.className='error-box visible';e.textContent=msg; }
+function hideResults() {
+  document.getElementById('error-box').className='error-box';
+  document.getElementById('verdict-card').className='verdict-card';
+  document.getElementById('score-section').className='score-section';
+  document.getElementById('metrics-section').className='metrics-section';
+  document.getElementById('breakdown-section').className='metrics-section';
+  document.getElementById('assumptions-box').className='assumptions-box';
+}
+</script>
+</body>
+</html>
