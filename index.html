@@ -888,154 +888,160 @@ function selectStock(ticker, name, sector) {
 
 document.addEventListener('click', e => { if (!e.target.closest('.search-box-wrap')) hideSugg(); });
 
-// ── FETCH via Finnhub ──
-const FH_KEY = 'd6vpanhr01qiiutclcr0d6vpanhr01qiiutclcrg';
+// ── ANTHROPIC API + WEB SEARCH — Live Indian Stock Valuation ──
+// This uses Claude with web search to fetch truly live data for any Indian stock.
+// No CORS issues, no third-party API keys, works for any NSE/BSE ticker.
 
-async function fetchFMP(ticker) {
-  // Finnhub uses NSE:TICKER or BSE:TICKER format
-  const exPrefix = exchange === 'NSE' ? 'NSE' : 'BSE';
-  const symbol = `${exPrefix}:${ticker}`;
-  const base = 'https://finnhub.io/api/v1';
-
-  // Fetch quote, company profile, and basic financials in parallel
-  const [qR, pR, mR] = await Promise.all([
-    fetch(`${base}/quote?symbol=${symbol}&token=${FH_KEY}`),
-    fetch(`${base}/stock/profile2?symbol=${symbol}&token=${FH_KEY}`),
-    fetch(`${base}/stock/metric?symbol=${symbol}&metric=all&token=${FH_KEY}`),
-  ]);
-
-  const [quote, profile, metrics] = await Promise.all([qR.json(), pR.json(), mR.json()]);
-
-  // If no price on preferred exchange, try the other
-  if (!quote || !quote.c || quote.c === 0) {
-    const altPrefix = exchange === 'NSE' ? 'BSE' : 'NSE';
-    const altSymbol = `${altPrefix}:${ticker}`;
-    const [qR2, pR2, mR2] = await Promise.all([
-      fetch(`${base}/quote?symbol=${altSymbol}&token=${FH_KEY}`),
-      fetch(`${base}/stock/profile2?symbol=${altSymbol}&token=${FH_KEY}`),
-      fetch(`${base}/stock/metric?symbol=${altSymbol}&metric=all&token=${FH_KEY}`),
-    ]);
-    const [q2, p2, m2] = await Promise.all([qR2.json(), pR2.json(), mR2.json()]);
-    if (!q2 || !q2.c || q2.c === 0) {
-      throw new Error(`Could not find ${ticker} on NSE or BSE via Finnhub. Check the ticker symbol.`);
-    }
-    return { quote: q2, profile: p2 || {}, metrics: (m2 && m2.metric) || {} };
-  }
-
-  return { quote, profile: profile || {}, metrics: (metrics && metrics.metric) || {} };
-}
-
-// ── ANALYSE ──
 async function analyse() {
   if (!selectedStock) return;
   hideResults();
-  showLoading('Fetching live data from Finnhub...');
+  showLoading('Searching live data for ' + selectedStock.name + '...');
+
+  const ex = exchange;
+  const ticker = selectedStock.ticker;
+  const name = selectedStock.name;
+  const sector = selectedStock.sector;
+
+  // Build a detailed prompt asking Claude to search and return structured JSON
+  const prompt = `You are a financial analyst. Search the web RIGHT NOW for live/current data on the Indian stock: ${name} (NSE ticker: ${ticker}, Sector: ${sector}, Exchange: ${ex}).
+
+Search for and return the MOST CURRENT available values for these metrics. Use sources like NSE India, BSE India, Screener.in, Moneycontrol, Economic Times Markets, or any reliable financial data source.
+
+Return ONLY a valid JSON object with NO other text, NO markdown, NO explanation. Just the raw JSON:
+
+{
+  "companyName": "full company name",
+  "ticker": "${ticker}",
+  "exchange": "${ex}",
+  "cmp": <current market price in INR as number>,
+  "change": <price change today as number>,
+  "changePct": <percentage change today as number e.g. 1.23 for 1.23%>,
+  "marketCapCr": <market cap in crores as number>,
+  "peTrailing": <trailing P/E ratio as number or null>,
+  "peForward": <forward P/E ratio as number or null>,
+  "pb": <price to book ratio as number or null>,
+  "evEbitda": <EV/EBITDA as number or null>,
+  "roe": <return on equity as percentage number e.g. 15.3 for 15.3% or null>,
+  "revenueGrowthPct": <YoY revenue growth as percentage number or null>,
+  "netProfitMarginPct": <net profit margin as percentage number or null>,
+  "debtToEquity": <debt to equity ratio as number or null>,
+  "dividendYieldPct": <dividend yield as percentage number or null>,
+  "peg": <PEG ratio as number or null>,
+  "fcfYieldPct": <free cash flow yield as percentage number or null>,
+  "week52High": <52 week high price as number or null>,
+  "week52Low": <52 week low price as number or null>,
+  "sectorPE": <approximate sector average P/E for ${sector} in India as number>,
+  "dataAsOf": "date/time of data",
+  "sources": ["source1", "source2"]
+}
+
+Be as accurate as possible. Search multiple sources. If a metric is truly unavailable return null for it.`;
+
   try {
-    const data = await fetchFMP(selectedStock.ticker);
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    if (!response.ok) throw new Error('API error: ' + response.status);
+    const apiData = await response.json();
+
+    // Extract the text content from the response (may be across multiple content blocks)
+    let fullText = '';
+    for (const block of apiData.content || []) {
+      if (block.type === 'text') fullText += block.text;
+    }
+
+    // Parse JSON from response
+    const jsonMatch = fullText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Could not parse data from response. Try again.');
+    const stockData = JSON.parse(jsonMatch[0]);
+
     setLoading('Crunching the numbers...');
     await new Promise(r => setTimeout(r, 300));
-    processAndRender(data);
+    processAndRender(stockData, sector);
+
   } catch(e) {
     hideLoading();
-    showError(`Couldn't fetch data for ${selectedStock.ticker}. ${e.message}`);
+    showError('Error: ' + e.message);
   }
 }
 
-function processAndRender(data) {
+function processAndRender(d, sector) {
   hideLoading();
-  const { quote, profile, metrics } = data;
-  const m = metrics;
 
-  // Finnhub quote fields: c=current, d=change, dp=changePct, h=high, l=low, o=open, pc=prevClose
-  const cmp          = quote.c  || 0;
-  const change       = quote.d  || 0;
-  const changePct    = (quote.dp || 0) / 100;
-  const companyName  = profile.name || selectedStock.name;
-  const mktCap       = profile.marketCapitalization ? profile.marketCapitalization * 1e6 : null;
-  const fiftyTwoHigh = m['52WeekHigh'] || null;
-  const fiftyTwoLow  = m['52WeekLow']  || null;
+  const cmp           = d.cmp            || 0;
+  const change        = d.change         || 0;
+  const changePct     = d.changePct      || 0;
+  const companyName   = d.companyName    || selectedStock.name;
+  const mktCap        = d.marketCapCr    ? d.marketCapCr * 1e7 : null;
+  const fiftyTwoHigh  = d.week52High     || null;
+  const fiftyTwoLow   = d.week52Low      || null;
+  const pe            = d.peTrailing     || null;
+  const forwardPE     = d.peForward      || pe;
+  const pb            = d.pb             || null;
+  const evEbitda      = d.evEbitda       || null;
+  const roe           = d.roe != null    ? d.roe / 100 : null;
+  const profitMargin  = d.netProfitMarginPct != null ? d.netProfitMarginPct / 100 : null;
+  const debtToEquity  = d.debtToEquity   || null;
+  const divYield      = d.dividendYieldPct != null ? d.dividendYieldPct / 100 : null;
+  const peg           = d.peg            || null;
+  const fcfYield      = d.fcfYieldPct != null ? d.fcfYieldPct / 100 : null;
+  const revenueGrowth = d.revenueGrowthPct != null ? d.revenueGrowthPct / 100 : null;
 
-  // Finnhub metric fields
-  const pe             = m.peBasicExclExtraTTM        || m.peTTM             || null;
-  const forwardPE      = m.peNormalizedAnnual          || pe;
-  const pb             = m.pbAnnual                   || m.pbQuarterly       || null;
-  const ps             = m.psAnnual                   || m.psTTM             || null;
-  const evEbitda       = m.currentEv/m.ebitdaTTM      || null;
-  const roe            = m.roeTTM  != null ? m.roeTTM / 100  : null;
-  const profitMargin   = m.netProfitMarginTTM != null ? m.netProfitMarginTTM / 100 : null;
-  const operatingMargin= m.operatingMarginTTM != null ? m.operatingMarginTTM / 100 : null;
-  const grossMargin    = m.grossMarginTTM != null ? m.grossMarginTTM / 100 : null;
-  const debtToEquity   = m.totalDebt/m.totalEquity    || null;
-  const currentRatio   = m.currentRatioAnnual         || m.currentRatioQuarterly || null;
-  const divYield       = m.dividendYieldIndicatedAnnual != null ? m.dividendYieldIndicatedAnnual / 100 : null;
-  const peg            = m.pegNormalizedAnnual         || null;
-  const fcfYield       = m.fcfYieldTTM != null ? m.fcfYieldTTM / 100 : null;
-  const revenueGrowth  = m.revenueGrowthTTMYoy != null ? m.revenueGrowthTTMYoy / 100 : null;
-  const earningsGrowth = m.epsGrowthTTMYoy != null ? m.epsGrowthTTMYoy / 100 : null;
-  const beta           = m.beta || profile.beta || null;
-
-  // ── SECTOR PE BENCHMARKS ──
-  const sector = selectedStock.sector || 'default';
+  // Use sector PE from response or fall back to hardcoded benchmarks
+  const sectorPE  = d.sectorPE || SECTOR_PE[Object.keys(SECTOR_PE).find(k => sector.includes(k)) || 'default'] || 25;
   const sectorKey = Object.keys(SECTOR_PE).find(k => sector.includes(k)) || 'default';
-  const sectorPE = SECTOR_PE[sectorKey];
-  const sectorPB = SECTOR_PB[sectorKey] || SECTOR_PB['default'];
+  const sectorPB  = SECTOR_PB[sectorKey] || SECTOR_PB['default'];
 
-  // ── SCORING SYSTEM (0 = deeply under, 100 = dangerously over) ──
+  // ── SCORING (0=deeply under, 100=dangerously over) ──
   let scores = [], weights = [];
-  const addScore = (val, benchLow, benchHigh, w, invert=false) => {
+  const addScore = (val, lo, hi, w, inv=false) => {
     if (val === null || isNaN(val)) return;
-    let norm;
-    if (invert) norm = 1 - Math.min(1, Math.max(0, (val - benchLow) / (benchHigh - benchLow)));
-    else norm = Math.min(1, Math.max(0, (val - benchLow) / (benchHigh - benchLow)));
-    scores.push(norm * 100);
-    weights.push(w);
+    let n = Math.min(1, Math.max(0, (val-lo)/(hi-lo)));
+    if (inv) n = 1-n;
+    scores.push(n*100); weights.push(w);
   };
-
-  // PE vs sector (higher PE = more overvalued)
-  if (pe) addScore(pe, sectorPE * 0.5, sectorPE * 2, 3);
-  if (forwardPE) addScore(forwardPE, sectorPE * 0.4, sectorPE * 1.8, 2);
-  // PB
-  if (pb) addScore(pb, sectorPB * 0.4, sectorPB * 2.5, 2);
-  // EV/EBITDA (higher = more overvalued)
-  if (evEbitda && evEbitda > 0) addScore(evEbitda, 8, 40, 2);
-  // PEG (>2 = overvalued, <1 = undervalued)
-  if (peg && peg > 0) addScore(peg, 0.5, 3, 2);
-  // ROE (higher = better quality = somewhat justifies premium, reduce overvaluation)
-  if (roe) addScore(roe, 0.05, 0.30, 1, true);
-  // Revenue growth (higher growth = justifies premium)
-  if (revenueGrowth) addScore(revenueGrowth, -0.05, 0.30, 1, true);
-  // FCF yield (higher = undervalued)
-  if (fcfYield) addScore(fcfYield, 0.01, 0.10, 1.5, true);
-  // 52-week position (near high = more likely overvalued)
-  if (fiftyTwoHigh && fiftyTwoLow && cmp) {
-    const pos = (cmp - fiftyTwoLow) / (fiftyTwoHigh - fiftyTwoLow);
-    scores.push(pos * 100); weights.push(0.5);
+  if (pe)           addScore(pe,           sectorPE*0.5,  sectorPE*2,   3);
+  if (forwardPE)    addScore(forwardPE,    sectorPE*0.4,  sectorPE*1.8, 2);
+  if (pb)           addScore(pb,           sectorPB*0.4,  sectorPB*2.5, 2);
+  if (evEbitda&&evEbitda>0) addScore(evEbitda, 8, 40, 2);
+  if (peg&&peg>0)   addScore(peg,          0.5,           3,            2);
+  if (roe)          addScore(roe,          0.05,          0.30,         1, true);
+  if (revenueGrowth)addScore(revenueGrowth,-0.05,         0.30,         1, true);
+  if (fcfYield)     addScore(fcfYield,     0.01,          0.10,         1.5, true);
+  if (fiftyTwoHigh&&fiftyTwoLow&&cmp) {
+    const pos=(cmp-fiftyTwoLow)/(fiftyTwoHigh-fiftyTwoLow);
+    scores.push(pos*100); weights.push(0.5);
   }
 
-  let score = 50; // default neutral
+  let score = 50;
   if (scores.length > 0) {
-    const totalW = weights.reduce((a,b)=>a+b,0);
-    score = scores.reduce((a,v,i)=>a+v*weights[i],0)/totalW;
-    score = Math.max(0, Math.min(100, score));
+    const tw = weights.reduce((a,b)=>a+b,0);
+    score = Math.max(0, Math.min(100, scores.reduce((a,v,i)=>a+v*weights[i],0)/tw));
   }
 
   // ── VERDICT ──
-  let verdict, quip, stamptxt;
+  let verdict, stamptxt, quip;
   if (score < 35) {
-    verdict = 'under';
-    stamptxt = 'UNDERVALUED';
-    const quips = [
+    verdict='under'; stamptxt='UNDERVALUED';
+    const q=[
       `The market has forgotten about ${companyName}. You're welcome.`,
       `${companyName} is cheaper than your last Swiggy order. Relatively speaking.`,
       `Analysts call it 'undervalued'. We call it 'everyone else is asleep'.`,
       `If ${companyName} were a restaurant, it would be a hidden gem with no Zomato listing.`,
       `The market is basically handing you ${companyName} at a discount. Which is suspicious, but here we are.`
     ];
-    quip = quips[Math.floor(Math.random()*quips.length)];
+    quip=q[Math.floor(Math.random()*q.length)];
   } else if (score > 65) {
-    verdict = 'over';
-    stamptxt = 'OVERVALUED';
-    const quips = [
+    verdict='over'; stamptxt='OVERVALUED';
+    const q=[
       `${companyName} is priced like it's already colonised Mars. It has not.`,
       `At this valuation, you're essentially paying for the company's dreams. Hope you like dreams.`,
       `The only thing growing faster than ${companyName}'s price is the confidence of retail investors buying it.`,
@@ -1043,39 +1049,39 @@ function processAndRender(data) {
       `Buying ${companyName} at this price is a bold strategy. Let's see how it plays out.`,
       `The valuation assumes ${companyName} will cure cancer, fix inflation, and also make great chai. Bold.`
     ];
-    quip = quips[Math.floor(Math.random()*quips.length)];
+    quip=q[Math.floor(Math.random()*q.length)];
   } else {
-    verdict = 'fair';
-    stamptxt = 'FAIR VALUE';
-    const quips = [
+    verdict='fair'; stamptxt='FAIR VALUE';
+    const q=[
       `Phew. ${companyName} is actually priced like a sensible adult. Rare.`,
       `Phew. The market got one right. ${companyName} is fairly valued. Mark the calendar.`,
       `Phew. ${companyName} is neither a steal nor a scam. What a time to be alive.`,
       `Phew. A fairly valued Indian stock. We didn't think we'd see this today.`
     ];
-    quip = quips[Math.floor(Math.random()*quips.length)];
+    quip=q[Math.floor(Math.random()*q.length)];
   }
 
-  const serious = `<strong>On a serious note:</strong> This is a quantitative screening tool using live market data from Yahoo Finance. The score combines P/E (vs sector average of ${sectorPE}x), P/B, EV/EBITDA, PEG, ROE, revenue growth, FCF yield, and 52-week positioning. It does <em>not</em> account for management quality, corporate governance, competitive moat, macro tailwinds, or qualitative factors — all of which can justify significant deviations from these metrics. Do not make investment decisions based solely on this tool. Consult a SEBI-registered investment advisor.`;
+  const sources = d.sources ? d.sources.join(', ') : 'web search';
+  const serious = `<strong>On a serious note:</strong> Data fetched live via web search (${sources}, as of ${d.dataAsOf||'today'}). Score combines P/E vs sector avg of ${sectorPE}x, P/B, EV/EBITDA, PEG, ROE, revenue growth, FCF yield, and 52-week position. Does <em>not</em> account for management quality, moat, governance, or macro factors. Do not make investment decisions based solely on this tool. Consult a SEBI-registered investment advisor.`;
 
-  // ── RENDER ──
+  // Render verdict
   const vc = document.getElementById('verdict-card');
   vc.className = `verdict-card visible ${verdict}`;
   document.getElementById('verdict-stamp').className = `verdict-stamp ${verdict}`;
   document.getElementById('verdict-stamp').textContent = stamptxt;
   document.getElementById('v-company').textContent = companyName;
-  document.getElementById('v-ticker').textContent = `${selectedStock.ticker}.${exchange === 'NSE' ? 'NS' : 'BO'} · ${selectedStock.sector} · ${exchange}`;
+  document.getElementById('v-ticker').textContent = `${d.ticker} · ${sector} · ${d.exchange}`;
   const vp = document.getElementById('v-price');
   vp.className = `verdict-price ${verdict}`;
-  vp.textContent = `₹${cmp.toLocaleString('en-IN', {minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  vp.textContent = `₹${cmp.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const vc2 = document.getElementById('v-change');
-  vc2.style.color = change >= 0 ? 'var(--green)' : 'var(--red)';
-  vc2.textContent = `${change>=0?'+':''}${change.toFixed(2)} (${changePct>=0?'+':''}${(changePct*100).toFixed(2)}%) today`;
+  vc2.style.color = change>=0?'var(--green)':'var(--red)';
+  vc2.textContent = `${change>=0?'+':''}${change.toFixed(2)} (${changePct>=0?'+':''}${changePct.toFixed(2)}%) today`;
   document.getElementById('v-quip').className = `verdict-quip ${verdict}`;
   document.getElementById('v-quip').innerHTML = `"${quip}"`;
   document.getElementById('v-serious').innerHTML = serious;
 
-  // ── SCORE BAR ──
+  // Score bar
   const ss = document.getElementById('score-section');
   ss.className = 'score-section visible';
   document.getElementById('score-label').textContent = verdict==='over'?'Overvaluation Score':verdict==='under'?'Undervaluation Score':'Fair Value Score';
@@ -1083,125 +1089,59 @@ function processAndRender(data) {
   sn.textContent = Math.round(score);
   sn.style.color = verdict==='over'?'var(--red)':verdict==='under'?'var(--green)':'var(--gold)';
   const sf = document.getElementById('score-fill');
-  sf.style.width = '0%';
+  sf.style.width='0%';
   sf.style.background = verdict==='over'?'var(--red)':verdict==='under'?'var(--green)':'var(--gold)';
-  setTimeout(() => { sf.style.width = score + '%'; }, 100);
+  setTimeout(()=>{ sf.style.width=score+'%'; },100);
 
-  // ── METRICS GRID ──
-  const ms = document.getElementById('metrics-section');
-  ms.className = 'metrics-section visible';
+  // Metrics grid
+  document.getElementById('metrics-section').className='metrics-section visible';
   const metricData = [
-    { label: 'CMP', val: cmp ? `₹${cmp.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}` : '—', sub: 'Current market price', signal: null, cls: '' },
-    { label: 'Market Cap', val: mktCap ? fmtCrore(mktCap) : '—', sub: 'Total market cap', signal: null, cls: '' },
-    { label: 'Trailing P/E', val: pe ? pe.toFixed(1)+'x' : '—', sub: `Sector avg: ${sectorPE}x`, signal: pe ? (pe < sectorPE*0.7 ? 'CHEAP' : pe > sectorPE*1.5 ? 'PRICEY' : 'IN LINE') : null, cls: pe ? (pe < sectorPE*0.7 ? 'good' : pe > sectorPE*1.5 ? 'bad' : 'warn') : '' },
-    { label: 'Forward P/E', val: forwardPE ? forwardPE.toFixed(1)+'x' : '—', sub: 'Based on est. earnings', signal: forwardPE ? (forwardPE < sectorPE*0.7 ? 'CHEAP' : forwardPE > sectorPE*1.5 ? 'PRICEY' : 'OK') : null, cls: forwardPE ? (forwardPE < sectorPE*0.7 ? 'good' : forwardPE > sectorPE*1.5 ? 'bad' : 'warn') : '' },
-    { label: 'P/B Ratio', val: pb ? pb.toFixed(2)+'x' : '—', sub: `Sector avg: ~${sectorPB}x`, signal: pb ? (pb < sectorPB*0.6 ? 'CHEAP' : pb > sectorPB*2 ? 'PRICEY' : 'OK') : null, cls: pb ? (pb < sectorPB*0.6 ? 'good' : pb > sectorPB*2 ? 'bad' : 'warn') : '' },
-    { label: 'EV/EBITDA', val: evEbitda && evEbitda > 0 ? evEbitda.toFixed(1)+'x' : '—', sub: 'Lower is cheaper', signal: evEbitda&&evEbitda>0 ? (evEbitda < 12 ? 'CHEAP' : evEbitda > 30 ? 'EXPENSIVE' : 'FAIR') : null, cls: evEbitda&&evEbitda>0 ? (evEbitda < 12 ? 'good' : evEbitda > 30 ? 'bad' : 'warn') : '' },
-    { label: 'PEG Ratio', val: peg && peg > 0 ? peg.toFixed(2) : '—', sub: '<1 cheap, >2 expensive', signal: peg&&peg>0 ? (peg < 1 ? 'CHEAP' : peg > 2 ? 'EXPENSIVE' : 'FAIR') : null, cls: peg&&peg>0 ? (peg < 1 ? 'good' : peg > 2 ? 'bad' : 'warn') : '' },
-    { label: 'ROE', val: roe ? (roe*100).toFixed(1)+'%' : '—', sub: '>15% = good business', signal: roe ? (roe > 0.20 ? 'STRONG' : roe > 0.12 ? 'DECENT' : 'WEAK') : null, cls: roe ? (roe > 0.20 ? 'good' : roe > 0.12 ? 'warn' : 'bad') : '' },
-    { label: 'Revenue Growth', val: revenueGrowth !== null ? (revenueGrowth*100).toFixed(1)+'%' : '—', sub: 'YoY revenue growth', signal: revenueGrowth !== null ? (revenueGrowth > 0.15 ? 'HIGH' : revenueGrowth > 0.05 ? 'MODERATE' : 'LOW') : null, cls: revenueGrowth !== null ? (revenueGrowth > 0.15 ? 'good' : revenueGrowth > 0.05 ? 'warn' : 'bad') : '' },
-    { label: 'Profit Margin', val: profitMargin !== null ? (profitMargin*100).toFixed(1)+'%' : '—', sub: 'Net profit margin', signal: profitMargin !== null ? (profitMargin > 0.15 ? 'STRONG' : profitMargin > 0.05 ? 'OK' : 'THIN') : null, cls: profitMargin !== null ? (profitMargin > 0.15 ? 'good' : profitMargin > 0.05 ? 'warn' : 'bad') : '' },
-    { label: 'D/E Ratio', val: debtToEquity !== null ? (debtToEquity/100).toFixed(2) : '—', sub: 'Lower = less leveraged', signal: debtToEquity !== null ? (debtToEquity < 50 ? 'LOW DEBT' : debtToEquity < 150 ? 'MODERATE' : 'HIGH DEBT') : null, cls: debtToEquity !== null ? (debtToEquity < 50 ? 'good' : debtToEquity < 150 ? 'warn' : 'bad') : '' },
-    { label: 'Div. Yield', val: divYield ? (divYield*100).toFixed(2)+'%' : '—', sub: 'Annual dividend yield', signal: divYield ? (divYield > 0.03 ? 'JUICY' : divYield > 0.01 ? 'MODEST' : 'LOW') : null, cls: divYield ? (divYield > 0.03 ? 'good' : divYield > 0.01 ? 'warn' : '') : '' },
+    {label:'CMP',          val: cmp?`₹${cmp.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`:'—', sub:'Current market price', signal:null, cls:''},
+    {label:'Market Cap',   val: mktCap?fmtCrore(mktCap):'—', sub:'Total market cap', signal:null, cls:''},
+    {label:'Trailing P/E', val: pe?pe.toFixed(1)+'x':'—', sub:`Sector avg: ${sectorPE}x`, signal:pe?(pe<sectorPE*0.7?'CHEAP':pe>sectorPE*1.5?'PRICEY':'IN LINE'):null, cls:pe?(pe<sectorPE*0.7?'good':pe>sectorPE*1.5?'bad':'warn'):''},
+    {label:'Forward P/E',  val: forwardPE?forwardPE.toFixed(1)+'x':'—', sub:'Est. earnings basis', signal:forwardPE?(forwardPE<sectorPE*0.7?'CHEAP':forwardPE>sectorPE*1.5?'PRICEY':'OK'):null, cls:forwardPE?(forwardPE<sectorPE*0.7?'good':forwardPE>sectorPE*1.5?'bad':'warn'):''},
+    {label:'P/B Ratio',    val: pb?pb.toFixed(2)+'x':'—', sub:`Sector avg: ~${sectorPB}x`, signal:pb?(pb<sectorPB*0.6?'CHEAP':pb>sectorPB*2?'PRICEY':'OK'):null, cls:pb?(pb<sectorPB*0.6?'good':pb>sectorPB*2?'bad':'warn'):''},
+    {label:'EV/EBITDA',    val: evEbitda&&evEbitda>0?evEbitda.toFixed(1)+'x':'—', sub:'Lower = cheaper', signal:evEbitda&&evEbitda>0?(evEbitda<12?'CHEAP':evEbitda>30?'EXPENSIVE':'FAIR'):null, cls:evEbitda&&evEbitda>0?(evEbitda<12?'good':evEbitda>30?'bad':'warn'):''},
+    {label:'PEG Ratio',    val: peg&&peg>0?peg.toFixed(2):'—', sub:'<1 cheap, >2 expensive', signal:peg&&peg>0?(peg<1?'CHEAP':peg>2?'EXPENSIVE':'FAIR'):null, cls:peg&&peg>0?(peg<1?'good':peg>2?'bad':'warn'):''},
+    {label:'ROE',          val: roe?(roe*100).toFixed(1)+'%':'—', sub:'>15% = good business', signal:roe?(roe>0.20?'STRONG':roe>0.12?'DECENT':'WEAK'):null, cls:roe?(roe>0.20?'good':roe>0.12?'warn':'bad'):''},
+    {label:'Rev. Growth',  val: revenueGrowth!=null?(revenueGrowth*100).toFixed(1)+'%':'—', sub:'YoY revenue growth', signal:revenueGrowth!=null?(revenueGrowth>0.15?'HIGH':revenueGrowth>0.05?'MODERATE':'LOW'):null, cls:revenueGrowth!=null?(revenueGrowth>0.15?'good':revenueGrowth>0.05?'warn':'bad'):''},
+    {label:'Net Margin',   val: profitMargin!=null?(profitMargin*100).toFixed(1)+'%':'—', sub:'Net profit margin', signal:profitMargin!=null?(profitMargin>0.15?'STRONG':profitMargin>0.05?'OK':'THIN'):null, cls:profitMargin!=null?(profitMargin>0.15?'good':profitMargin>0.05?'warn':'bad'):''},
+    {label:'D/E Ratio',    val: debtToEquity!=null?debtToEquity.toFixed(2):'—', sub:'Lower = less debt', signal:debtToEquity!=null?(debtToEquity<0.5?'LOW DEBT':debtToEquity<1.5?'MODERATE':'HIGH DEBT'):null, cls:debtToEquity!=null?(debtToEquity<0.5?'good':debtToEquity<1.5?'warn':'bad'):''},
+    {label:'Div. Yield',   val: divYield?(divYield*100).toFixed(2)+'%':'—', sub:'Annual dividend yield', signal:divYield?(divYield>0.03?'JUICY':divYield>0.01?'MODEST':'LOW'):null, cls:divYield?(divYield>0.03?'good':divYield>0.01?'warn':''):''},
   ];
-  document.getElementById('metrics-grid').innerHTML = metricData.map(m => `
+  document.getElementById('metrics-grid').innerHTML = metricData.map(m=>`
     <div class="metric-cell">
       <div class="mc-label">${m.label}</div>
       <div class="mc-val ${m.cls}">${m.val}</div>
       <div class="mc-sub">${m.sub}</div>
-      ${m.signal ? `<div class="mc-signal ${m.cls==='good'?'green':m.cls==='bad'?'red':m.cls==='warn'?'gold':'gray'}">${m.signal}</div>` : ''}
+      ${m.signal?`<div class="mc-signal ${m.cls==='good'?'green':m.cls==='bad'?'red':m.cls==='warn'?'gold':'gray'}">${m.signal}</div>`:''}
     </div>`).join('');
 
-  // ── VALUATION BREAKDOWN ──
-  const bs = document.getElementById('breakdown-section');
-  bs.className = 'metrics-section visible';
-  const methods = [
-    {
-      name: 'Relative — P/E vs Sector',
-      sub: `Stock P/E vs ${sectorKey} sector average of ${sectorPE}x`,
-      stock: pe ? pe.toFixed(1)+'x' : '—',
-      bench: sectorPE+'x',
-      fill: pe ? Math.min(100, (pe/sectorPE)*50) : 50,
-      color: pe ? (pe < sectorPE*0.7 ? 'var(--green)' : pe > sectorPE*1.5 ? 'var(--red)' : 'var(--gold)') : 'var(--ink3)',
-      signal: pe ? (pe < sectorPE*0.7 ? 'Undervalued vs sector' : pe > sectorPE*1.5 ? 'Overvalued vs sector' : 'In line with sector') : 'N/A'
-    },
-    {
-      name: 'Relative — P/B vs Sector',
-      sub: `Price-to-book vs ${sectorKey} sector average of ~${sectorPB}x`,
-      stock: pb ? pb.toFixed(2)+'x' : '—',
-      bench: sectorPB+'x',
-      fill: pb ? Math.min(100, (pb/sectorPB)*50) : 50,
-      color: pb ? (pb < sectorPB*0.6 ? 'var(--green)' : pb > sectorPB*2 ? 'var(--red)' : 'var(--gold)') : 'var(--ink3)',
-      signal: pb ? (pb < sectorPB*0.6 ? 'Trading below book — opportunity?' : pb > sectorPB*2 ? 'Significant book premium' : 'Reasonable book value') : 'N/A'
-    },
-    {
-      name: 'Growth-Adjusted — PEG Ratio',
-      sub: 'P/E relative to earnings growth rate. <1 = undervalued, >2 = expensive',
-      stock: peg && peg > 0 ? peg.toFixed(2) : '—',
-      bench: '1.0 (fair)',
-      fill: peg && peg > 0 ? Math.min(100, peg*33) : 50,
-      color: peg&&peg>0 ? (peg < 1 ? 'var(--green)' : peg > 2 ? 'var(--red)' : 'var(--gold)') : 'var(--ink3)',
-      signal: peg&&peg>0 ? (peg < 1 ? 'Growth not fully priced in' : peg > 2 ? 'Paying a lot for growth' : 'Growth fairly priced') : 'N/A'
-    },
-    {
-      name: 'EV / EBITDA',
-      sub: 'Enterprise value vs operating earnings. Capital-structure neutral',
-      stock: evEbitda&&evEbitda>0 ? evEbitda.toFixed(1)+'x' : '—',
-      bench: '15x (fair)',
-      fill: evEbitda&&evEbitda>0 ? Math.min(100, (evEbitda/30)*100) : 50,
-      color: evEbitda&&evEbitda>0 ? (evEbitda < 12 ? 'var(--green)' : evEbitda > 30 ? 'var(--red)' : 'var(--gold)') : 'var(--ink3)',
-      signal: evEbitda&&evEbitda>0 ? (evEbitda < 12 ? 'Cheap on EV basis' : evEbitda > 30 ? 'Premium EV multiple' : 'Reasonable EV multiple') : 'N/A'
-    },
-    {
-      name: 'Quality — ROE',
-      sub: 'Return on equity — justifies valuation premium above 20%',
-      stock: roe ? (roe*100).toFixed(1)+'%' : '—',
-      bench: '15% (threshold)',
-      fill: roe ? Math.min(100, (roe/0.40)*100) : 50,
-      color: roe ? (roe > 0.20 ? 'var(--green)' : roe > 0.10 ? 'var(--gold)' : 'var(--red)') : 'var(--ink3)',
-      signal: roe ? (roe > 0.25 ? 'High-quality compounder' : roe > 0.15 ? 'Decent capital efficiency' : 'Below-par capital allocation') : 'N/A'
-    },
-    {
-      name: 'Cash Generation — FCF Yield',
-      sub: 'Free cash flow as % of market cap. Higher = more undervalued',
-      stock: fcfYield !== null ? (fcfYield*100).toFixed(2)+'%' : '—',
-      bench: '3-5% (healthy)',
-      fill: fcfYield !== null ? Math.max(0, 100 - (fcfYield/0.10)*100) : 50,
-      color: fcfYield !== null ? (fcfYield > 0.05 ? 'var(--green)' : fcfYield > 0.02 ? 'var(--gold)' : 'var(--red)') : 'var(--ink3)',
-      signal: fcfYield !== null ? (fcfYield > 0.05 ? 'Strong cash machine' : fcfYield > 0.02 ? 'Adequate cash generation' : 'Weak/negative FCF') : 'N/A'
-    },
+  // Valuation breakdown
+  document.getElementById('breakdown-section').className='metrics-section visible';
+  const methods=[
+    {name:'Relative — P/E vs Sector',sub:`Stock P/E vs ${sectorKey} sector avg of ${sectorPE}x`,stock:pe?pe.toFixed(1)+'x':'—',bench:sectorPE+'x',fill:pe?Math.min(100,(pe/sectorPE)*50):50,color:pe?(pe<sectorPE*0.7?'var(--green)':pe>sectorPE*1.5?'var(--red)':'var(--gold)'):'var(--ink3)',signal:pe?(pe<sectorPE*0.7?'Undervalued vs sector':pe>sectorPE*1.5?'Overvalued vs sector':'In line with sector'):'N/A'},
+    {name:'Relative — P/B vs Sector',sub:`Price-to-book vs ${sectorKey} avg of ~${sectorPB}x`,stock:pb?pb.toFixed(2)+'x':'—',bench:sectorPB+'x',fill:pb?Math.min(100,(pb/sectorPB)*50):50,color:pb?(pb<sectorPB*0.6?'var(--green)':pb>sectorPB*2?'var(--red)':'var(--gold)'):'var(--ink3)',signal:pb?(pb<sectorPB*0.6?'Trading below book':'Significant book premium'):'N/A'},
+    {name:'Growth-Adjusted — PEG',sub:'P/E relative to growth. <1 = undervalued, >2 = expensive',stock:peg&&peg>0?peg.toFixed(2):'—',bench:'1.0 (fair)',fill:peg&&peg>0?Math.min(100,peg*33):50,color:peg&&peg>0?(peg<1?'var(--green)':peg>2?'var(--red)':'var(--gold)'):'var(--ink3)',signal:peg&&peg>0?(peg<1?'Growth not fully priced in':peg>2?'Paying a lot for growth':'Growth fairly priced'):'N/A'},
+    {name:'EV / EBITDA',sub:'Enterprise value vs operating earnings',stock:evEbitda&&evEbitda>0?evEbitda.toFixed(1)+'x':'—',bench:'15x (fair)',fill:evEbitda&&evEbitda>0?Math.min(100,(evEbitda/30)*100):50,color:evEbitda&&evEbitda>0?(evEbitda<12?'var(--green)':evEbitda>30?'var(--red)':'var(--gold)'):'var(--ink3)',signal:evEbitda&&evEbitda>0?(evEbitda<12?'Cheap on EV basis':evEbitda>30?'Premium EV multiple':'Reasonable EV multiple'):'N/A'},
+    {name:'Quality — ROE',sub:'Return on equity. >20% justifies valuation premium',stock:roe?(roe*100).toFixed(1)+'%':'—',bench:'15% threshold',fill:roe?Math.min(100,(roe/0.40)*100):50,color:roe?(roe>0.20?'var(--green)':roe>0.10?'var(--gold)':'var(--red)'):'var(--ink3)',signal:roe?(roe>0.25?'High-quality compounder':roe>0.15?'Decent capital efficiency':'Below-par capital allocation'):'N/A'},
+    {name:'Cash Generation — FCF Yield',sub:'Free cash flow as % of market cap',stock:fcfYield!=null?(fcfYield*100).toFixed(2)+'%':'—',bench:'3–5% healthy',fill:fcfYield!=null?Math.max(0,100-(fcfYield/0.10)*100):50,color:fcfYield!=null?(fcfYield>0.05?'var(--green)':fcfYield>0.02?'var(--gold)':'var(--red)'):'var(--ink3)',signal:fcfYield!=null?(fcfYield>0.05?'Strong cash machine':fcfYield>0.02?'Adequate FCF':'Weak/negative FCF'):'N/A'},
   ];
-  document.getElementById('val-breakdown').innerHTML = `
-    <div class="val-breakdown-head"><span>Method</span><span>Score / Signal</span></div>` +
-    methods.map(m => `
-    <div class="val-row">
-      <div class="val-metric">${m.name}<small>${m.sub}</small></div>
-      <div class="val-nums">
-        <div class="val-num"><div class="val-num-label">Stock</div><div class="val-num-val" style="color:${m.color}">${m.stock}</div></div>
-        <div class="val-num"><div class="val-num-label">Benchmark</div><div class="val-num-val" style="color:var(--ink3)">${m.bench}</div></div>
-        <div style="text-align:right;">
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--ink3);margin-bottom:4px;">${m.signal}</div>
-          <div class="val-signal-bar"><div class="val-signal-fill" style="width:${m.fill}%;background:${m.color};"></div></div>
-        </div>
-      </div>
-    </div>`).join('');
+  document.getElementById('val-breakdown').innerHTML=`<div class="val-breakdown-head"><span>Method</span><span>Score / Signal</span></div>`+
+    methods.map(m=>`<div class="val-row"><div class="val-metric">${m.name}<small>${m.sub}</small></div><div class="val-nums"><div class="val-num"><div class="val-num-label">Stock</div><div class="val-num-val" style="color:${m.color}">${m.stock}</div></div><div class="val-num"><div class="val-num-label">Benchmark</div><div class="val-num-val" style="color:var(--ink3)">${m.bench}</div></div><div style="text-align:right;"><div style="font-family:var(--font-mono);font-size:10px;color:var(--ink3);margin-bottom:4px;">${m.signal}</div><div class="val-signal-bar"><div class="val-signal-fill" style="width:${m.fill}%;background:${m.color};"></div></div></div></div></div>`).join('');
 
-  // ── ASSUMPTIONS ──
-  const ab = document.getElementById('assumptions-box');
-  ab.className = 'assumptions-box visible';
-  const assList = [
-    { label: 'Sector PE benchmark', val: `${sectorPE}x (${sectorKey} sector avg)` },
-    { label: 'Sector PB benchmark', val: `${sectorPB}x (${sectorKey} sector avg)` },
-    { label: 'Fair EV/EBITDA', val: '15x (broad market avg)' },
-    { label: 'PEG fair value', val: '1.0x (Graham standard)' },
-    { label: 'FCF yield threshold', val: '3–5% = adequate' },
-    { label: 'ROE threshold', val: '>15% justifies premium' },
-    { label: 'Data source', val: 'Yahoo Finance (live)' },
-    { label: 'DCF', val: 'Implicit via FCF yield + growth' },
-    { label: 'Score weights', val: 'P/E ×3, Fwd P/E ×2, P/B ×2, EV/EBITDA ×2, PEG ×2, ROE ×1, Growth ×1, FCF ×1.5' },
-  ];
-  document.getElementById('assumptions-grid').innerHTML = assList.map(a => `
-    <div class="ass-item"><strong>${a.label}</strong>${a.val}</div>`).join('');
+  // Assumptions
+  document.getElementById('assumptions-box').className='assumptions-box visible';
+  document.getElementById('assumptions-grid').innerHTML=[
+    {label:'Data source',val:'Live web search via Claude AI'},
+    {label:'Data freshness',val:d.dataAsOf||'Today'},
+    {label:'Sources used',val:(d.sources||[]).join(', ')||'Web search'},
+    {label:'Sector PE benchmark',val:`${sectorPE}x (${sectorKey})`},
+    {label:'Sector PB benchmark',val:`${sectorPB}x (${sectorKey})`},
+    {label:'Fair EV/EBITDA',val:'15x'},
+    {label:'PEG fair value',val:'1.0x'},
+    {label:'Score weights',val:'P/E ×3, Fwd P/E ×2, P/B ×2, EV/EBITDA ×2, PEG ×2, ROE ×1, Growth ×1, FCF ×1.5'},
+  ].map(a=>`<div class="ass-item"><strong>${a.label}</strong>${a.val}</div>`).join('');
 }
 
 function fmtCrore(v) {
