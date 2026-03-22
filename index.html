@@ -897,87 +897,65 @@ async function analyse() {
   hideResults();
   showLoading('Searching live data for ' + selectedStock.name + '...');
 
-  const ex = exchange;
-  const ticker = selectedStock.ticker;
-  const name = selectedStock.name;
   const sector = selectedStock.sector;
 
-  // Build a detailed prompt asking Claude to search and return structured JSON
-  const prompt = `You are a financial analyst. Search the web RIGHT NOW for live/current data on the Indian stock: ${name} (NSE ticker: ${ticker}, Sector: ${sector}, Exchange: ${ex}).
-
-Search for and return the MOST CURRENT available values for these metrics. Use sources like NSE India, BSE India, Screener.in, Moneycontrol, Economic Times Markets, or any reliable financial data source.
-
-Return ONLY a valid JSON object with NO other text, NO markdown, NO explanation. Just the raw JSON:
-
-{
-  "companyName": "full company name",
-  "ticker": "${ticker}",
-  "exchange": "${ex}",
-  "cmp": <current market price in INR as number>,
-  "change": <price change today as number>,
-  "changePct": <percentage change today as number e.g. 1.23 for 1.23%>,
-  "marketCapCr": <market cap in crores as number>,
-  "peTrailing": <trailing P/E ratio as number or null>,
-  "peForward": <forward P/E ratio as number or null>,
-  "pb": <price to book ratio as number or null>,
-  "evEbitda": <EV/EBITDA as number or null>,
-  "roe": <return on equity as percentage number e.g. 15.3 for 15.3% or null>,
-  "revenueGrowthPct": <YoY revenue growth as percentage number or null>,
-  "netProfitMarginPct": <net profit margin as percentage number or null>,
-  "debtToEquity": <debt to equity ratio as number or null>,
-  "dividendYieldPct": <dividend yield as percentage number or null>,
-  "peg": <PEG ratio as number or null>,
-  "fcfYieldPct": <free cash flow yield as percentage number or null>,
-  "week52High": <52 week high price as number or null>,
-  "week52Low": <52 week low price as number or null>,
-  "sectorPE": <approximate sector average P/E for ${sector} in India as number>,
-  "dataAsOf": "date/time of data",
-  "sources": ["source1", "source2"]
-}
-
-Be as accurate as possible. Search multiple sources. If a metric is truly unavailable return null for it.`;
-
   try {
-    const response = await fetch('/api/analyse', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-
-    if (!response.ok) throw new Error('API error: ' + response.status);
-    const apiData = await response.json();
-
-    // Extract the text content from the response (may be across multiple content blocks)
-    let fullText = '';
-    for (const block of apiData.content || []) {
-      if (block.type === 'text') fullText += block.text;
-    }
-
-    // Parse JSON from response — find the largest JSON object in the text
-    const jsonMatches = fullText.match(/\{[\s\S]*?\}/g) || [];
-    // Also try greedy match for the full object
-    const greedyMatch = fullText.match(/\{[\s\S]*\}/);
-    if (greedyMatch) jsonMatches.unshift(greedyMatch[0]);
+    // Screener.in public API — free, no key, works for all NSE stocks
+    const screenerUrl = `https://www.screener.in/api/company/${selectedStock.ticker}/?format=json`;
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(screenerUrl)}`;
     
-    let stockData = null;
-    for (const candidate of jsonMatches) {
-      try {
-        const parsed = JSON.parse(candidate);
-        // Must have at least a cmp or companyName field to be valid
-        if (parsed.cmp || parsed.companyName || parsed.ticker) {
-          stockData = parsed;
-          break;
+    const res = await fetch(proxyUrl);
+    if (!res.ok) throw new Error('Network error');
+    const outer = await res.json();
+    const sc = JSON.parse(outer.contents);
+
+    if (!sc || sc.detail === 'Not found.') throw new Error('Stock not found on Screener.in. Try a different ticker.');
+
+    // Extract ratios from Screener's data structure
+    const getRatio = (name) => {
+      for (const section of sc.ratios || []) {
+        for (const r of section.ratio || []) {
+          if (r.name && r.name.toLowerCase().includes(name.toLowerCase())) {
+            const val = parseFloat(r.latest || r.value);
+            return isNaN(val) ? null : val;
+          }
         }
-      } catch(e) { continue; }
-    }
-    if (!stockData) {
-      // Log what we got for debugging
-      console.log('Full response text:', fullText);
-      console.log('API response:', JSON.stringify(apiData));
-      throw new Error('Could not parse data from response. Try again in a moment.');
-    }
+      }
+      return null;
+    };
+
+    // Get current price from BSE/NSE data
+    const bseData = sc.bse_price || {};
+    const nseData = sc.nse_price || {};
+    const cmpVal = exchange === 'NSE' ? (nseData.price || bseData.price || 0) : (bseData.price || nseData.price || 0);
+    const changeVal = exchange === 'NSE' ? (nseData.change || 0) : (bseData.change || 0);
+    const changePctVal = exchange === 'NSE' ? (nseData.percent_change || 0) : (bseData.percent_change || 0);
+
+    const stockData = {
+      companyName: sc.name || selectedStock.name,
+      ticker: selectedStock.ticker,
+      exchange: exchange,
+      cmp: cmpVal,
+      change: changeVal,
+      changePct: changePctVal,
+      marketCapCr: sc.market_cap || null,
+      peTrailing: getRatio('P/E') || sc.pe || null,
+      peForward: null,
+      pb: getRatio('Price to Book') || sc.pb || null,
+      evEbitda: null,
+      roe: getRatio('Return on equity') || getRatio('ROE') || null,
+      revenueGrowthPct: getRatio('Sales growth') || null,
+      netProfitMarginPct: getRatio('Net profit margin') || null,
+      debtToEquity: getRatio('Debt to equity') || null,
+      dividendYieldPct: getRatio('Dividend yield') || null,
+      peg: null,
+      fcfYieldPct: null,
+      week52High: nseData.high_52 || bseData.high_52 || null,
+      week52Low: nseData.low_52 || bseData.low_52 || null,
+      sectorPE: null,
+      dataAsOf: 'Live from Screener.in',
+      sources: ['Screener.in']
+    };
 
     setLoading('Crunching the numbers...');
     await new Promise(r => setTimeout(r, 300));
