@@ -480,7 +480,7 @@ header {
   <div class="header-inner">
     <div class="title-block">
       <div class="title-main">Nishq of <em>Overpaying</em></div>
-      <div class="title-sub">Indian Equity Valuation Engine · by <span>Nishq Nerlekar</span> · Live data via Yahoo Finance</div>
+      <div class="title-sub">Indian Equity Valuation Engine · by <span>Nishq Nerlekar</span> · Live data via AI web search</div>
     </div>
     <div class="header-right">
       <span class="live-dot"></span>LIVE PRICES<br>
@@ -938,13 +938,10 @@ Return ONLY a valid JSON object with NO other text, NO markdown, NO explanation.
 Be as accurate as possible. Search multiple sources. If a metric is truly unavailable return null for it.`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('/api/analyse', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages: [{ role: 'user', content: prompt }]
       })
     });
