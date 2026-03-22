@@ -888,49 +888,48 @@ function selectStock(ticker, name, sector) {
 
 document.addEventListener('click', e => { if (!e.target.closest('.search-box-wrap')) hideSugg(); });
 
-// ── FETCH via Financial Modeling Prep ──
-const FMP_KEY = 'a8eJzH8hEj3iIutpKBKRQ681UG8qujUB';
+// ── FETCH via Finnhub ──
+const FH_KEY = 'd6vpanhr01qiiutclcr0d6vpanhr01qiiutclcrg';
 
 async function fetchFMP(ticker) {
-  const base = 'https://financialmodelingprep.com/api/v3';
-  // FMP uses bare ticker for NSE (e.g. RELIANCE), ticker.BO for BSE
-  // Try all variants: bare, .NS, .BO
-  const variants = exchange === 'NSE'
-    ? [ticker, ticker + '.NS', ticker + '.BO']
-    : [ticker + '.BO', ticker, ticker + '.NS'];
+  // Finnhub uses NSE:TICKER or BSE:TICKER format
+  const exPrefix = exchange === 'NSE' ? 'NSE' : 'BSE';
+  const symbol = `${exPrefix}:${ticker}`;
+  const base = 'https://finnhub.io/api/v1';
 
-  for (const symbol of variants) {
-    try {
-      const [qR, pR, rR, gR, kR] = await Promise.all([
-        fetch(`${base}/quote/${symbol}?apikey=${FMP_KEY}`),
-        fetch(`${base}/profile/${symbol}?apikey=${FMP_KEY}`),
-        fetch(`${base}/ratios-ttm/${symbol}?apikey=${FMP_KEY}`),
-        fetch(`${base}/financial-growth/${symbol}?limit=1&apikey=${FMP_KEY}`),
-        fetch(`${base}/key-metrics-ttm/${symbol}?apikey=${FMP_KEY}`),
-      ]);
-      const [quote, profile, ratios, growth, keyMetrics] = await Promise.all([
-        qR.json(), pR.json(), rR.json(), gR.json(), kR.json()
-      ]);
-      if (quote && quote[0] && quote[0].price) {
-        return {
-          quote:      quote[0],
-          profile:    profile[0]    || {},
-          ratios:     ratios[0]     || {},
-          growth:     growth[0]     || {},
-          keyMetrics: keyMetrics[0] || {},
-          symbolUsed: symbol
-        };
-      }
-    } catch(e) { /* try next variant */ }
+  // Fetch quote, company profile, and basic financials in parallel
+  const [qR, pR, mR] = await Promise.all([
+    fetch(`${base}/quote?symbol=${symbol}&token=${FH_KEY}`),
+    fetch(`${base}/stock/profile2?symbol=${symbol}&token=${FH_KEY}`),
+    fetch(`${base}/stock/metric?symbol=${symbol}&metric=all&token=${FH_KEY}`),
+  ]);
+
+  const [quote, profile, metrics] = await Promise.all([qR.json(), pR.json(), mR.json()]);
+
+  // If no price on preferred exchange, try the other
+  if (!quote || !quote.c || quote.c === 0) {
+    const altPrefix = exchange === 'NSE' ? 'BSE' : 'NSE';
+    const altSymbol = `${altPrefix}:${ticker}`;
+    const [qR2, pR2, mR2] = await Promise.all([
+      fetch(`${base}/quote?symbol=${altSymbol}&token=${FH_KEY}`),
+      fetch(`${base}/stock/profile2?symbol=${altSymbol}&token=${FH_KEY}`),
+      fetch(`${base}/stock/metric?symbol=${altSymbol}&metric=all&token=${FH_KEY}`),
+    ]);
+    const [q2, p2, m2] = await Promise.all([qR2.json(), pR2.json(), mR2.json()]);
+    if (!q2 || !q2.c || q2.c === 0) {
+      throw new Error(`Could not find ${ticker} on NSE or BSE via Finnhub. Check the ticker symbol.`);
+    }
+    return { quote: q2, profile: p2 || {}, metrics: (m2 && m2.metric) || {} };
   }
-  throw new Error(`Could not find ${ticker} on Financial Modeling Prep. Try typing the exact NSE ticker (e.g. RELIANCE, INFY, HDFCBANK).`);
+
+  return { quote, profile: profile || {}, metrics: (metrics && metrics.metric) || {} };
 }
 
 // ── ANALYSE ──
 async function analyse() {
   if (!selectedStock) return;
   hideResults();
-  showLoading('Fetching live data from Financial Modeling Prep...');
+  showLoading('Fetching live data from Finnhub...');
   try {
     const data = await fetchFMP(selectedStock.ticker);
     setLoading('Crunching the numbers...');
@@ -944,33 +943,36 @@ async function analyse() {
 
 function processAndRender(data) {
   hideLoading();
-  const { quote, profile, ratios, growth, keyMetrics } = data;
+  const { quote, profile, metrics } = data;
+  const m = metrics;
 
-  const cmp          = quote.price || 0;
-  const change       = quote.change || 0;
-  const changePct    = (quote.changesPercentage || 0) / 100;
-  const companyName  = quote.name || profile.companyName || selectedStock.name;
-  const mktCap       = quote.marketCap || null;
-  const fiftyTwoHigh = quote.yearHigh || null;
-  const fiftyTwoLow  = quote.yearLow  || null;
+  // Finnhub quote fields: c=current, d=change, dp=changePct, h=high, l=low, o=open, pc=prevClose
+  const cmp          = quote.c  || 0;
+  const change       = quote.d  || 0;
+  const changePct    = (quote.dp || 0) / 100;
+  const companyName  = profile.name || selectedStock.name;
+  const mktCap       = profile.marketCapitalization ? profile.marketCapitalization * 1e6 : null;
+  const fiftyTwoHigh = m['52WeekHigh'] || null;
+  const fiftyTwoLow  = m['52WeekLow']  || null;
 
-  const pe             = ratios.peRatioTTM                       || null;
-  const forwardPE      = ratios.priceEarningsRatioTTM            || pe;
-  const pb             = ratios.priceToBookRatioTTM              || null;
-  const ps             = ratios.priceToSalesRatioTTM             || null;
-  const evEbitda       = ratios.enterpriseValueMultipleTTM       || keyMetrics.evToEbitdaTTM || null;
-  const roe            = ratios.returnOnEquityTTM                || null;
-  const profitMargin   = ratios.netProfitMarginTTM               || null;
-  const operatingMargin= ratios.operatingProfitMarginTTM         || null;
-  const grossMargin    = ratios.grossProfitMarginTTM             || null;
-  const debtToEquity   = ratios.debtEquityRatioTTM               || null;
-  const currentRatio   = ratios.currentRatioTTM                  || null;
-  const divYield       = ratios.dividendYieldTTM                 || null;
-  const peg            = ratios.priceEarningsToGrowthRatioTTM    || null;
-  const fcfYield       = keyMetrics.freeCashFlowYieldTTM         || null;
-  const revenueGrowth  = growth.revenueGrowth                    || null;
-  const earningsGrowth = growth.netIncomeGrowth                  || null;
-  const beta           = profile.beta                            || null;
+  // Finnhub metric fields
+  const pe             = m.peBasicExclExtraTTM        || m.peTTM             || null;
+  const forwardPE      = m.peNormalizedAnnual          || pe;
+  const pb             = m.pbAnnual                   || m.pbQuarterly       || null;
+  const ps             = m.psAnnual                   || m.psTTM             || null;
+  const evEbitda       = m.currentEv/m.ebitdaTTM      || null;
+  const roe            = m.roeTTM  != null ? m.roeTTM / 100  : null;
+  const profitMargin   = m.netProfitMarginTTM != null ? m.netProfitMarginTTM / 100 : null;
+  const operatingMargin= m.operatingMarginTTM != null ? m.operatingMarginTTM / 100 : null;
+  const grossMargin    = m.grossMarginTTM != null ? m.grossMarginTTM / 100 : null;
+  const debtToEquity   = m.totalDebt/m.totalEquity    || null;
+  const currentRatio   = m.currentRatioAnnual         || m.currentRatioQuarterly || null;
+  const divYield       = m.dividendYieldIndicatedAnnual != null ? m.dividendYieldIndicatedAnnual / 100 : null;
+  const peg            = m.pegNormalizedAnnual         || null;
+  const fcfYield       = m.fcfYieldTTM != null ? m.fcfYieldTTM / 100 : null;
+  const revenueGrowth  = m.revenueGrowthTTMYoy != null ? m.revenueGrowthTTMYoy / 100 : null;
+  const earningsGrowth = m.epsGrowthTTMYoy != null ? m.epsGrowthTTMYoy / 100 : null;
+  const beta           = m.beta || profile.beta || null;
 
   // ── SECTOR PE BENCHMARKS ──
   const sector = selectedStock.sector || 'default';
