@@ -893,12 +893,13 @@ const FMP_KEY = 'a8eJzH8hEj3iIutpKBKRQ681UG8qujUB';
 
 async function fetchFMP(ticker) {
   const base = 'https://financialmodelingprep.com/api/v3';
-  // Try preferred exchange first, then the other as fallback
-  const preferred = exchange === 'NSE' ? '.NS' : '.BO';
-  const fallback  = exchange === 'NSE' ? '.BO' : '.NS';
+  // FMP uses bare ticker for NSE (e.g. RELIANCE), ticker.BO for BSE
+  // Try all variants: bare, .NS, .BO
+  const variants = exchange === 'NSE'
+    ? [ticker, ticker + '.NS', ticker + '.BO']
+    : [ticker + '.BO', ticker, ticker + '.NS'];
 
-  for (const suffix of [preferred, fallback]) {
-    const symbol = ticker + suffix;
+  for (const symbol of variants) {
     try {
       const [qR, pR, rR, gR, kR] = await Promise.all([
         fetch(`${base}/quote/${symbol}?apikey=${FMP_KEY}`),
@@ -910,7 +911,6 @@ async function fetchFMP(ticker) {
       const [quote, profile, ratios, growth, keyMetrics] = await Promise.all([
         qR.json(), pR.json(), rR.json(), gR.json(), kR.json()
       ]);
-      // Valid response: quote array must exist and have a non-zero price
       if (quote && quote[0] && quote[0].price) {
         return {
           quote:      quote[0],
@@ -921,9 +921,9 @@ async function fetchFMP(ticker) {
           symbolUsed: symbol
         };
       }
-    } catch(e) { /* try next suffix */ }
+    } catch(e) { /* try next variant */ }
   }
-  throw new Error(`No data found for ${ticker}.NS or ${ticker}.BO on FMP. The ticker may not be covered on the free plan, or the symbol is incorrect.`);
+  throw new Error(`Could not find ${ticker} on Financial Modeling Prep. Try typing the exact NSE ticker (e.g. RELIANCE, INFY, HDFCBANK).`);
 }
 
 // ── ANALYSE ──
