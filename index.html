@@ -888,19 +888,61 @@ function selectStock(ticker, name, sector) {
 
 document.addEventListener('click', e => { if (!e.target.closest('.search-box-wrap')) hideSugg(); });
 
-// ── FETCH via Yahoo Finance (CORS proxy) ──
+// ── FETCH via Yahoo Finance (CORS proxy with fallbacks) ──
 async function fetchYahoo(ticker) {
   const suffix = exchange === 'NSE' ? '.NS' : '.BO';
-  const symbol = encodeURIComponent(ticker + suffix);
-  // Use allorigins CORS proxy to bypass browser CORS restriction
-  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=price,summaryDetail,financialData,defaultKeyStatistics,earningsTrend`;
-  const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-  const res = await fetch(proxy);
-  if (!res.ok) throw new Error('Network error');
-  const data = await res.json();
-  const parsed = JSON.parse(data.contents);
-  if (parsed.quoteSummary.error) throw new Error(parsed.quoteSummary.error.description || 'Yahoo Finance error');
-  return parsed.quoteSummary.result[0];
+  const rawSymbol = ticker + suffix;
+  const symbol = encodeURIComponent(rawSymbol);
+  const yahooUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=price,summaryDetail,financialData,defaultKeyStatistics,earningsTrend`;
+  const yahooUrl2 = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=price,summaryDetail,financialData,defaultKeyStatistics,earningsTrend`;
+
+  // Try multiple CORS proxies in order
+  const proxies = [
+    url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+    url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  ];
+
+  let lastError = null;
+
+  for (const makeProxy of proxies) {
+    for (const yUrl of [yahooUrl, yahooUrl2]) {
+      try {
+        const proxyUrl = makeProxy(yUrl);
+        const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+        if (!res.ok) continue;
+        const text = await res.text();
+        let parsed;
+        try {
+          // allorigins wraps in {contents, status}, others return raw JSON
+          const outer = JSON.parse(text);
+          if (outer.contents) {
+            parsed = JSON.parse(outer.contents);
+          } else if (outer.quoteSummary) {
+            parsed = outer;
+          } else {
+            continue;
+          }
+        } catch(e) { continue; }
+
+        if (!parsed || !parsed.quoteSummary) continue;
+        if (parsed.quoteSummary.error) {
+          lastError = new Error(parsed.quoteSummary.error.description || 'Yahoo Finance returned an error');
+          continue;
+        }
+        if (!parsed.quoteSummary.result || !parsed.quoteSummary.result[0]) {
+          lastError = new Error('No data returned — ticker may be invalid');
+          continue;
+        }
+        return parsed.quoteSummary.result[0];
+      } catch(e) {
+        lastError = e;
+        continue;
+      }
+    }
+  }
+
+  throw lastError || new Error('All data sources failed. Yahoo Finance may be rate-limiting. Try again in a moment.');
 }
 
 // ── ANALYSE ──
