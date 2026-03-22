@@ -892,19 +892,38 @@ document.addEventListener('click', e => { if (!e.target.closest('.search-box-wra
 const FMP_KEY = 'a8eJzH8hEj3iIutpKBKRQ681UG8qujUB';
 
 async function fetchFMP(ticker) {
-  const suffix = exchange === 'NSE' ? '.NS' : '.BO';
-  const symbol = ticker + suffix;
   const base = 'https://financialmodelingprep.com/api/v3';
-  const [qR, pR, rR, gR, kR] = await Promise.all([
-    fetch(`${base}/quote/${symbol}?apikey=${FMP_KEY}`),
-    fetch(`${base}/profile/${symbol}?apikey=${FMP_KEY}`),
-    fetch(`${base}/ratios-ttm/${symbol}?apikey=${FMP_KEY}`),
-    fetch(`${base}/financial-growth/${symbol}?limit=1&apikey=${FMP_KEY}`),
-    fetch(`${base}/key-metrics-ttm/${symbol}?apikey=${FMP_KEY}`),
-  ]);
-  const [quote, profile, ratios, growth, keyMetrics] = await Promise.all([qR.json(),pR.json(),rR.json(),gR.json(),kR.json()]);
-  if (!quote || !quote[0]) throw new Error(`No data found for ${symbol}. Try switching NSE/BSE or check the ticker.`);
-  return { quote:quote[0], profile:profile[0]||{}, ratios:ratios[0]||{}, growth:growth[0]||{}, keyMetrics:keyMetrics[0]||{} };
+  // Try preferred exchange first, then the other as fallback
+  const preferred = exchange === 'NSE' ? '.NS' : '.BO';
+  const fallback  = exchange === 'NSE' ? '.BO' : '.NS';
+
+  for (const suffix of [preferred, fallback]) {
+    const symbol = ticker + suffix;
+    try {
+      const [qR, pR, rR, gR, kR] = await Promise.all([
+        fetch(`${base}/quote/${symbol}?apikey=${FMP_KEY}`),
+        fetch(`${base}/profile/${symbol}?apikey=${FMP_KEY}`),
+        fetch(`${base}/ratios-ttm/${symbol}?apikey=${FMP_KEY}`),
+        fetch(`${base}/financial-growth/${symbol}?limit=1&apikey=${FMP_KEY}`),
+        fetch(`${base}/key-metrics-ttm/${symbol}?apikey=${FMP_KEY}`),
+      ]);
+      const [quote, profile, ratios, growth, keyMetrics] = await Promise.all([
+        qR.json(), pR.json(), rR.json(), gR.json(), kR.json()
+      ]);
+      // Valid response: quote array must exist and have a non-zero price
+      if (quote && quote[0] && quote[0].price) {
+        return {
+          quote:      quote[0],
+          profile:    profile[0]    || {},
+          ratios:     ratios[0]     || {},
+          growth:     growth[0]     || {},
+          keyMetrics: keyMetrics[0] || {},
+          symbolUsed: symbol
+        };
+      }
+    } catch(e) { /* try next suffix */ }
+  }
+  throw new Error(`No data found for ${ticker}.NS or ${ticker}.BO on FMP. The ticker may not be covered on the free plan, or the symbol is incorrect.`);
 }
 
 // ── ANALYSE ──
